@@ -5,38 +5,52 @@
 
 using namespace std;
 
+typedef vector<vector<double>> Training_Data ;
+
+Training_Data load_data_from_file(string filename) {
+  ifstream ifs {filename};
+
+  if(!ifs) {
+      cout << "couldn't open training file";
+      return {};
+  }
+
+  Training_Data rows;
+
+  for(string row_buffer_str; getline(ifs, row_buffer_str);) {
+      istringstream row_buffer;
+      vector<double> current_row {};
+
+      row_buffer.str(row_buffer_str);
+      
+      for(double f; row_buffer>>f;)
+          current_row.push_back(f);
+
+      rows.push_back(current_row);
+      current_row = {};
+  }
+  return rows;
+}
+
+
+
 int main(void) {
-    ifstream ifs {"mnist_train.txt"};
 
-    if(!ifs) {
-        cout << "couldn't open training file";
-        return 1;
-    }
 
-    vector<vector<float>> rows;
+    Training_Data rows = load_data_from_file("mnist_train.txt");
 
-    for(string row_buffer_str; getline(ifs, row_buffer_str);) {
-        istringstream row_buffer;
-        vector<float> current_row {};
-
-        row_buffer.str(row_buffer_str);
-        
-        for(float f; row_buffer>>f;)
-            current_row.push_back(f);
-
-        cout << "finished a row\n";
-        rows.push_back(current_row);
-        current_row = {};
-    }
 
     cout << rows.size() << "\n\nall done!\n\n";
+    cout << rows[0].size() << "\n\nall done!\n\n";
 
-    for(const vector<float> row : rows) { 
-      for(const float cell : row) 
-        cout << cell << "\t";
 
-      cout << "\n";
-    }
+     for(const vector<double> row : rows) { 
+       cout << row[784] << "\n";
+    //   for(const float cell : row) 
+    //     cout << cell << "\t";
+
+    //   cout << "\n";
+     }
 
     return 0;
 }
