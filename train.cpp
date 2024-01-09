@@ -2,6 +2,8 @@
 #include<fstream>
 #include<vector>
 #include<sstream>
+#include<random>
+#include<valarray>
 
 using namespace std;
 
@@ -32,7 +34,27 @@ Training_Data load_data_from_file(string filename) {
   return rows;
 }
 
+struct Model_Weights {
+  valarray<double> layer0_weights;
+  valarray<double> layer1_weights;
+  const unsigned int input_size;
+  const unsigned int num_hidden_nodes;
+};
 
+
+Model_Weights initiate_layer0_weights(unsigned int input_size, unsigned int num_nodes){
+    using my_engine = default_random_engine;
+    using my_distribution = uniform_real_distribution<>;
+
+    my_engine eng {};
+    my_distribution dist { -0.05, 0.05 };
+
+    auto get_rand = [&](){ return dist(eng); } ; // wtf? a lambda function in c++ ?
+
+
+
+    return { get_rand() };
+}
 
 int main(void) {
 
