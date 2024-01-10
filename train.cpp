@@ -125,12 +125,26 @@ valarray<double> model_output(Model_Weights& weights, valarray<double>& input) {
   return ret;
 }
 
+int from_model_output(valarray<double>& out) {
+  for(int i=0; i<out.size(); i++) {
+    cout << "data: " << out[i] << " max: " << out.max() << "\n";
+    if(out[i] == out.max()) return i;
+  }
+  return -1;
+}
+
 
 int main(void) {
     Training_Data rows = load_data_from_file("mnist_train.txt");
     Model_Weights weights = initiate_weights(784, 10, 10);
 
-    cout << rows[0].x.size();
+    for(auto row : rows) { // = rows[0];;) {
+
+        valarray<double> model_out = model_output(weights, row.x);
+
+        cout << from_model_output(model_out) << " : " << row.t << "\n";
+
+    }
 
     return 0;
 }
