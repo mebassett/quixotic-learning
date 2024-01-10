@@ -35,14 +35,17 @@ Training_Data load_data_from_file(string filename) {
 }
 
 struct Model_Weights {
-  valarray<double> layer0_weights;
-  valarray<double> layer1_weights;
+  vector<valarray<double>> layer0_weights;
+  vector<valarray<double>> layer1_weights;
   const unsigned int input_size;
   const unsigned int num_hidden_nodes;
+  const unsigned int output_size;
 };
 
 
-Model_Weights initiate_layer0_weights(unsigned int input_size, unsigned int num_nodes){
+Model_Weights initiate_weights( unsigned int input_size
+                              , unsigned int num_nodes
+                              , unsigned int output_size){
     using my_engine = default_random_engine;
     using my_distribution = uniform_real_distribution<>;
 
@@ -51,28 +54,42 @@ Model_Weights initiate_layer0_weights(unsigned int input_size, unsigned int num_
 
     auto get_rand = [&](){ return dist(eng); } ; // wtf? a lambda function in c++ ?
 
+    vector<valarray<double>> w0 {};
+    vector<valarray<double>> w1 {};
 
+    for(int j = 0; j<num_nodes;j++) {
+      valarray<double> weights(input_size);
+      for(int i =0; i<input_size; i++){
+        weights[i] =  get_rand();
+      }
+      w0.push_back(weights);
 
-    return { get_rand() };
+    }
+
+    for(int j=0; j<output_size;j++) {
+      valarray<double> weights (num_nodes);
+      for(int i =0; i<num_nodes;i++){
+        weights[i] = get_rand() ;
+      }
+      w1.push_back(weights);
+    }
+
+    return { w0, w1, input_size, num_nodes, output_size };
 }
 
 int main(void) {
 
 
-    Training_Data rows = load_data_from_file("mnist_train.txt");
+    //Training_Data rows = load_data_from_file("mnist_train.txt");
+    Model_Weights weights = initiate_weights(784, 10, 10);
+
+    for(auto j: weights.layer0_weights) {
+      for(auto i : j) {
+        cout << i << "\n";
+      }
+    }
 
 
-    cout << rows.size() << "\n\nall done!\n\n";
-    cout << rows[0].size() << "\n\nall done!\n\n";
-
-
-     for(const vector<double> row : rows) { 
-       cout << row[784] << "\n";
-    //   for(const float cell : row) 
-    //     cout << cell << "\t";
-
-    //   cout << "\n";
-     }
 
     return 0;
 }
