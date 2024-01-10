@@ -4,6 +4,7 @@
 #include<sstream>
 #include<random>
 #include<valarray>
+#include<cmath>
 
 using namespace std;
 
@@ -77,17 +78,44 @@ Model_Weights initiate_weights( unsigned int input_size
     return { w0, w1, input_size, num_nodes, output_size };
 }
 
+double layer_0_activation(double x) {
+  return (exp(x)  - exp(-x)) / ( exp(x) + exp(-x) );
+}
+
+double layer_0_activation_prime(double x) {
+  return 1 - pow(layer_0_activation(x), 2);
+}
+
+
+double layer_0_output(Model_Weights& weights, unsigned int j, valarray<double>& input) {
+  return layer_0_activation((weights.layer0_weights[j] * input).sum());
+}
+
+double layer_1_output(Model_Weights& weights, unsigned int j, valarray<double>& input) {
+    valarray<double> output_0(weights.num_hidden_nodes);
+
+    for(int i =0; i< weights.num_hidden_nodes; i++) {
+        output_0[i] = layer_0_output(weights, i, input);
+    }
+
+    return layer_0_activation( (weights.layer1_weights[j] * output_0).sum() );
+}
+
+valarray<double> model_output(Model_Weights& weights, valarray<double>& input) {
+  valarray<double> ret(weights.output_size);
+  for(int j = 0; j<weights.output_size;j++) {
+    ret[j] = layer_1_output(weights, j, input);
+  }
+  return ret;
+}
+
+
 int main(void) {
-
-
-    //Training_Data rows = load_data_from_file("mnist_train.txt");
+    Training_Data rows = load_data_from_file("mnist_train.txt");
     Model_Weights weights = initiate_weights(784, 10, 10);
 
-    for(auto j: weights.layer0_weights) {
-      for(auto i : j) {
-        cout << i << "\n";
-      }
-    }
+    cout << rows[0].size();
+
 
 
 
