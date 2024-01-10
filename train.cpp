@@ -7,8 +7,14 @@
 #include<cmath>
 
 using namespace std;
+const unsigned int INPUT_SIZE = 784;
 
-typedef vector<vector<double>> Training_Data ;
+struct Training_Datum {
+  valarray<double> x;
+  double t;
+};
+
+typedef vector<Training_Datum> Training_Data ;
 
 Training_Data load_data_from_file(string filename) {
   ifstream ifs {filename};
@@ -18,18 +24,28 @@ Training_Data load_data_from_file(string filename) {
       return {};
   }
 
-  Training_Data rows;
+  Training_Data rows {};
 
   for(string row_buffer_str; getline(ifs, row_buffer_str);) {
       istringstream row_buffer;
-      vector<double> current_row {};
+      valarray<double> current_row(INPUT_SIZE);
 
       row_buffer.str(row_buffer_str);
-      
-      for(double f; row_buffer>>f;)
-          current_row.push_back(f);
 
-      rows.push_back(current_row);
+      int i = 0;
+      
+      for(double f; row_buffer>>f;) {
+        if(i<INPUT_SIZE) {
+          current_row[i] = f;
+          i++;
+        } else {
+
+          rows.push_back({current_row, f});
+        
+          continue;
+        }
+    
+      }
       current_row = {};
   }
   return rows;
@@ -114,10 +130,7 @@ int main(void) {
     Training_Data rows = load_data_from_file("mnist_train.txt");
     Model_Weights weights = initiate_weights(784, 10, 10);
 
-    cout << rows[0].size();
-
-
-
+    cout << rows[0].x.size();
 
     return 0;
 }
