@@ -8,10 +8,24 @@
 
 using namespace std;
 const unsigned int INPUT_SIZE = 784;
+const unsigned int OUTPUT_SIZE = 10;
+
+
+valarray<double> to_model_output(int in) {
+    valarray<double> ret(OUTPUT_SIZE);
+    for(int i = 0; i<OUTPUT_SIZE; i++)
+      if(i==in)
+        ret[i] = 1;
+      else 
+        ret[i] = 0;
+    return ret;
+
+}
 
 struct Training_Datum {
   valarray<double> x;
-  double t;
+  int y;
+  valarray<double> t;
 };
 
 typedef vector<Training_Datum> Training_Data ;
@@ -40,7 +54,7 @@ Training_Data load_data_from_file(string filename) {
           i++;
         } else {
 
-          rows.push_back({current_row, f});
+          rows.push_back({current_row, lround(f), to_model_output(lround(f))});
         
           continue;
         }
@@ -134,15 +148,16 @@ int from_model_output(valarray<double>& out) {
 }
 
 
+
 int main(void) {
     Training_Data rows = load_data_from_file("mnist_train.txt");
-    Model_Weights weights = initiate_weights(784, 10, 10);
+    Model_Weights weights = initiate_weights(INPUT_SIZE, 10, OUTPUT_SIZE);
 
     for(auto row : rows) { // = rows[0];;) {
 
         valarray<double> model_out = model_output(weights, row.x);
 
-        cout << from_model_output(model_out) << " : " << row.t << "\n";
+        cout << from_model_output(model_out) << " : " << row.y << "\n";
 
     }
 
