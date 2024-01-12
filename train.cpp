@@ -147,6 +147,19 @@ int from_model_output(valarray<double>& out) {
   return -1;
 }
 
+double model_error(Training_Data& data, Model_Weights& weights) {
+    double err = 0.0;
+
+    for (auto row : data) {
+        valarray<double> sigma = row.t - model_output(weights, row.x);
+        sigma *= sigma;
+        err += sigma.sum();
+    }
+
+    return 0.5*err;
+
+}
+
 
 
 int main(void) {
@@ -160,6 +173,8 @@ int main(void) {
         cout << from_model_output(model_out) << " : " << row.y << "\n";
 
     }
+
+    cout << "model mean squared error on training data: " << model_error(rows, weights);
 
     return 0;
 }
