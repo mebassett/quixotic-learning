@@ -7,8 +7,8 @@
 #include<cmath>
 
 using namespace std;
-const unsigned int INPUT_SIZE = 784;
-const unsigned int OUTPUT_SIZE = 10;
+const unsigned int INPUT_SIZE = 2;//784;
+const unsigned int OUTPUT_SIZE = 1;//10;
 
 
 valarray<double> to_model_output(int in) {
@@ -30,6 +30,21 @@ struct Training_Datum {
 
 typedef vector<Training_Datum> Training_Data ;
 
+void print_out(Training_Datum& row) {
+      cout << "OUT " << row.y << ": ";
+      for(auto i : row.t) {
+          cout << i << ", ";
+      } 
+
+      cout << "\n";
+}
+
+void print_outs(Training_Data& rows) {
+    for (auto row : rows) {
+        print_out(row);
+    }
+}
+
 Training_Data load_data_from_file(string filename) {
   ifstream ifs {filename};
 
@@ -42,26 +57,31 @@ Training_Data load_data_from_file(string filename) {
 
   for(string row_buffer_str; getline(ifs, row_buffer_str);) {
       istringstream row_buffer;
-      valarray<double> current_row(INPUT_SIZE);
+      valarray<double> current_row(INPUT_SIZE+1);
 
       row_buffer.str(row_buffer_str);
 
       int i = 0;
+      double max = 0;
       
       for(double f; row_buffer>>f;) {
         if(i<INPUT_SIZE) {
-          current_row[i] = f;
+          current_row[i+1] = f;
+          if (f > max) max = f;
           i++;
         } else {
+          if(max != 0)
+              current_row = (1.0/max) * current_row; 
+          current_row[0] = 1.0;
 
-          rows.push_back({current_row, lround(f), to_model_output(lround(f))});
+          rows.push_back({current_row, lround(f), { f } } );//to_model_output(lround(f))});
         
           continue;
         }
     
       }
       current_row = {};
-      if(rows.size() > 100) return rows;
+      if(rows.size() >= 200) return rows;
   }
   return rows;
 }
@@ -78,16 +98,16 @@ struct Model_Weights {
 Model_Weights initiate_weights( unsigned int input_size
                               , unsigned int num_nodes
                               , unsigned int output_size){
-    using my_engine = default_random_engine;
-    using my_distribution = uniform_real_distribution<>;
 
-    my_engine eng {};
-    my_distribution dist { -0.05, 0.05 };
+    random_device rd;  
+    mt19937 gen(rd()); 
+    uniform_real_distribution<> dis(-1.05, 1.05);
 
-    auto get_rand = [&](){ return dist(eng); } ; // wtf? a lambda function in c++ ?
 
-    vector<valarray<double>> w0 {};
-    vector<valarray<double>> w1 {};
+    auto get_rand = [&](){ return dis(rd); } ; // wtf? a lambda function in c++ ?
+
+    vector<valarray<double>> w0;
+    vector<valarray<double>> w1;
 
     for(int j = 0; j<num_nodes;j++) {
       valarray<double> weights(input_size);
@@ -110,19 +130,27 @@ Model_Weights initiate_weights( unsigned int input_size
 }
 
 double layer_0_activation(double x) {
-  return (exp(x)  - exp(-x)) / ( exp(x) + exp(-x) );
+  //return  tanh(x);
+  return 1 / (1+ exp(-x));
+  if(x>0) return x;
+  return 0.001*x;
 }
 
 double layer_0_activation_prime(double x) {
-  return 1 - pow(layer_0_activation(x), 2);
+  //return 1 - pow(layer_0_activation(x), 2);
+  return layer_0_activation(x) * (1-layer_0_activation(x));
+  if(x>0) return 1;
+  return 0.01;
 }
 
 double layer_1_activation(double x) {
-  return (exp(x)  - exp(-x)) / ( exp(x) + exp(-x) );
+  //return 1 / (1+ exp(-x));
+  return x;
 }
 
 double layer_1_activation_prime(double x) {
-  return 1 - pow(layer_1_activation(x), 2);
+  //return layer_1_activation(x) * (1-layer_1_activation(x));
+  return 1;
 }
 
 
@@ -132,7 +160,6 @@ double layer_0_output(Model_Weights& weights, unsigned int j, valarray<double>& 
 
 valarray<double> all_layer_0_outputs(Model_Weights& weights, valarray<double>& input) {
     valarray<double> output_0(weights.num_hidden_nodes);
-
     for(int i =0; i< weights.num_hidden_nodes; i++) {
         output_0[i] = layer_0_output(weights, i, input);
     }
@@ -155,7 +182,8 @@ valarray<double> model_output(Model_Weights& weights, valarray<double>& input) {
   return ret;
 }
 
-int from_model_output(valarray<double>& out) {
+double from_model_output(valarray<double>& out) {
+  return out[0];
   for(int i=0; i<out.size(); i++) {
     if(out[i] == out.max()) return i;
   }
@@ -182,56 +210,132 @@ double del_err_by_del_weight_1_I_J (Model_Weights& weights, int i, int j, Traini
            * layer_0_output(weights, i, row.x);
 }
 
-bool train_layer1_weights(Model_Weights& weights, Training_Datum& row, double learning_rate) {
-    for(int j=0;j<weights.layer1_weights.size(); j++) {
-        valarray<double> grad_err_by_layer_1 (weights.num_hidden_nodes);
-        double activation_result = layer_1_activation_prime( ( all_layer_0_outputs(weights, row.x) * weights.layer1_weights[j]  ).sum()  ) ;
-        for(int i =0; i<weights.num_hidden_nodes;i++) {
-            grad_err_by_layer_1 = del_err_by_del_weight_1_I_J(weights, i, j, row, activation_result);
-        }
+double del_err_by_weight_0_K_J (Model_Weights& weights, int K, int J, Training_Datum& row,
+        valarray<double> activation_vector ) {
+    double iter = 0.0;
 
-        weights.layer1_weights[j] += learning_rate * grad_err_by_layer_1;
+
+    valarray<double> relevant_weights ( weights.output_size);
+    for(int j = 0 ; j< weights.output_size;j++) {
+        relevant_weights[j] = weights.layer1_weights[j][J];
 
     }
+    return - layer_0_activation_prime(( weights.layer0_weights[J] * row.x).sum())
+           * (activation_vector * relevant_weights).sum()
+           * layer_0_output(weights, J, row.x)
+           * row.x[K];
+
+}
+
+bool train_weights(Model_Weights& weights, Training_Datum& row, double learning_rate) {
+    vector<valarray<double>> grad_err_by_layer_1 (weights.layer1_weights.size());
+    vector<valarray<double>> grad_err_by_layer_0 (weights.layer0_weights.size());
+
+
+    for(int j=0;j<weights.layer1_weights.size(); j++) {
+        grad_err_by_layer_1[j] = valarray<double>(weights.num_hidden_nodes);
+        double activation_result = layer_1_activation_prime( ( all_layer_0_outputs(weights, row.x) * weights.layer1_weights[j]  ).sum()  ) ;
+        for(int i =0; i<weights.num_hidden_nodes;i++) {
+            grad_err_by_layer_1[j][i] = del_err_by_del_weight_1_I_J(weights, i, j, row, activation_result);
+
+        }
+
+
+        
+
+    }
+
+
+    valarray<double> activation_vector = row.t - model_output(weights, row.x);
+
+    valarray<double> activation_prime_vector (row.t.size());
+
+    for (int i = 0; i< row.t.size(); i++) {
+      activation_prime_vector[i] =  
+        layer_1_activation_prime(( weights.layer1_weights[i] * all_layer_0_outputs(weights, row.x)   ).sum());
+    }
+
+    activation_vector *= activation_prime_vector;
+
+    for (int J=0; J<weights.layer0_weights.size(); J++) {
+        grad_err_by_layer_0[J] = valarray<double>(weights.layer1_weights.size());
+        for(int K=0; K<weights.input_size;K++) {
+          double t =   del_err_by_weight_0_K_J(weights, K, J, row, activation_vector);
+          grad_err_by_layer_0[J][K] = t;
+        }
+
+    }
+
+    for(int i = 0;i<weights.layer0_weights.size();i++)
+      weights.layer0_weights[i] += learning_rate * grad_err_by_layer_0[i]; 
+
+    for(int i = 0;i<weights.layer1_weights.size();i++)
+      weights.layer1_weights[i] += learning_rate * grad_err_by_layer_1[i]; 
 
 
     return true;
 }
 
+void print_weights(Model_Weights& weights) {
+  cout << "printing weights...\nlayer0 weights:\n";
+
+  for (int i=0; i < weights.layer0_weights.size(); i++) {
+    cout << "W^{0, ? }_" << i <<" = [";
+    for (auto x : weights.layer0_weights[i]) 
+      cout << x << ", ";
+    cout << "\n";
+  }
+  cout << "layer 1 weights:\n";
+  for (int i=0; i < weights.layer1_weights.size(); i++) {
+    cout << "W^{1, ? }_" << i <<" = [";
+    for (auto x : weights.layer1_weights[i]) 
+      cout << x << ", ";
+    cout << "\n";
+  }
+}
 
 
 
 int main(void) {
-    Training_Data rows = load_data_from_file("mnist_train.txt");
-    Model_Weights weights = initiate_weights(INPUT_SIZE, 100, OUTPUT_SIZE);
+    Training_Data rows = load_data_from_file("xor_train.tsv");
+    Model_Weights weights = initiate_weights(INPUT_SIZE+1, 2, OUTPUT_SIZE);
 
 
     cout << "model mean squared error on training data: " << model_error(rows, weights) << "\n";
+    int count = 0;
+    double error = 9999;
+    int rounds = 1;
     for(auto row : rows) { // = rows[0];;) {
 
         valarray<double> model_out = model_output(weights, row.x);
 
         cout << from_model_output(model_out) << " : " << row.y << "\n";
+        if(row.y == round(from_model_output(model_out))) count++;
 
     }
-    for(int round=0; round<100; round++) {
-        cout << "training round: " << round << "\n";
+    cout << "num right: " << count << "/" << rows.size() << "\n";
+    count = 0;
+    while(error > 0.05) {
+        print_weights(weights);
+
         for(auto row : rows) {
-            train_layer1_weights(weights, row, 0.01);
+            train_weights(weights, row, -0.5);
         }
-        cout << "round finished.\n";
+        error = model_error(rows, weights);
+        cout << "round " << rounds << " finished.\n";
+        cout << "model mean squared error on training data: " << error << "\n";
+        for(auto row : rows) { // = rows[0];;) {
+
+            valarray<double> model_out = model_output(weights, row.x);
+
+            cout << from_model_output(model_out) << " : " << row.y << "\n";
+            if(row.y == lround(from_model_output(model_out))) count++;
+
+        }
+    cout << "num right: " << count << "/" << rows.size() << "\n";
+    count = 0;
+    rounds++;
     }
-
-    cout << "model mean squared error on training data: " << model_error(rows, weights) << "\n";
-
-    for(auto row : rows) { // = rows[0];;) {
-
-        valarray<double> model_out = model_output(weights, row.x);
-
-        cout << from_model_output(model_out) << " : " << row.y << "\n";
-
-    }
-
 
     return 0;
 }
