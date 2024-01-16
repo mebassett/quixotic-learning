@@ -7,8 +7,8 @@
 #include<cmath>
 
 using namespace std;
-const unsigned int INPUT_SIZE = 2;//784;
-const unsigned int OUTPUT_SIZE = 1;//10;
+const unsigned int INPUT_SIZE = 784;
+const unsigned int OUTPUT_SIZE = 10;
 
 
 valarray<double> to_model_output(int in) {
@@ -74,14 +74,14 @@ Training_Data load_data_from_file(string filename) {
               current_row = (1.0/max) * current_row; 
           current_row[0] = 1.0;
 
-          rows.push_back({current_row, lround(f), { f } } );//to_model_output(lround(f))});
+          rows.push_back({current_row, lround(f), to_model_output(lround(f))});
         
           continue;
         }
     
       }
       current_row = {};
-      if(rows.size() >= 200) return rows;
+      if(rows.size() >= 100) return rows;
   }
   return rows;
 }
@@ -94,6 +94,47 @@ struct Model_Weights {
   const unsigned int output_size;
 };
 
+struct Model_Weights_Improved {
+  double* weights;
+  const unsigned int input_size;
+  const unsigned int num_hidden_nodes;
+  const unsigned int output_size;
+};
+
+Model_Weights_Improved initiate_weights_ ( unsigned int input_size
+                              , unsigned int num_nodes
+                              , unsigned int output_size){
+
+    int weights0_size = input_size*num_nodes;
+    int weights1_size = num_nodes*output_size;
+    double* weights = new double[weights0_size+weights1_size];
+
+    random_device rd;  
+    mt19937 gen(rd()); 
+    uniform_real_distribution<> dis(-10.05, 10.05);
+
+
+    auto get_rand = [&](){ return dis(rd); } ;
+    for(int i {0}; i < weights0_size+weights1_size;i++){
+        *(weights+i) = get_rand();
+    }
+
+    return {weights, input_size, num_nodes, output_size };
+}
+
+double** get_weights0_to_j_from_i( Model_Weights_Improved model
+                                 , unsigned int j
+                                 , unsigned int i) {
+  double** ret = new double*[model.input_size];
+
+  for(int i {0}; i < model.input_size; i++) {
+    *(ret+i) = (model.weights + j*model.input_size + i);
+  }
+
+  return ret;
+}
+
+
 
 Model_Weights initiate_weights( unsigned int input_size
                               , unsigned int num_nodes
@@ -101,7 +142,7 @@ Model_Weights initiate_weights( unsigned int input_size
 
     random_device rd;  
     mt19937 gen(rd()); 
-    uniform_real_distribution<> dis(-1.05, 1.05);
+    uniform_real_distribution<> dis(-10.05, 10.05);
 
 
     auto get_rand = [&](){ return dis(rd); } ; // wtf? a lambda function in c++ ?
@@ -183,7 +224,6 @@ valarray<double> model_output(Model_Weights& weights, valarray<double>& input) {
 }
 
 double from_model_output(valarray<double>& out) {
-  return out[0];
   for(int i=0; i<out.size(); i++) {
     if(out[i] == out.max()) return i;
   }
@@ -193,7 +233,7 @@ double from_model_output(valarray<double>& out) {
 double model_error(Training_Data& data, Model_Weights& weights) {
     double err = 0.0;
 
-    for (auto row : data) {
+    for (auto& row : data) {
         valarray<double> sigma = row.t - model_output(weights, row.x);
         sigma *= sigma;
         err += sigma.sum();
@@ -258,7 +298,7 @@ bool train_weights(Model_Weights& weights, Training_Datum& row, double learning_
     activation_vector *= activation_prime_vector;
 
     for (int J=0; J<weights.layer0_weights.size(); J++) {
-        grad_err_by_layer_0[J] = valarray<double>(weights.layer1_weights.size());
+        grad_err_by_layer_0[J] = valarray<double>(weights.input_size);
         for(int K=0; K<weights.input_size;K++) {
           double t =   del_err_by_weight_0_K_J(weights, K, J, row, activation_vector);
           grad_err_by_layer_0[J][K] = t;
@@ -297,45 +337,52 @@ void print_weights(Model_Weights& weights) {
 
 
 int main(void) {
-    Training_Data rows = load_data_from_file("xor_train.tsv");
-    Model_Weights weights = initiate_weights(INPUT_SIZE+1, 2, OUTPUT_SIZE);
+    Training_Data rows = load_data_from_file("mnist_train.txt");
+    Model_Weights_Improved model = initiate_weights_(INPUT_SIZE+1, 28, OUTPUT_SIZE);
 
-
-    cout << "model mean squared error on training data: " << model_error(rows, weights) << "\n";
-    int count = 0;
-    double error = 9999;
-    int rounds = 1;
-    for(auto row : rows) { // = rows[0];;) {
-
-        valarray<double> model_out = model_output(weights, row.x);
-
-        cout << from_model_output(model_out) << " : " << row.y << "\n";
-        if(row.y == round(from_model_output(model_out))) count++;
-
-    }
-    cout << "num right: " << count << "/" << rows.size() << "\n";
-    count = 0;
-    while(error > 0.05) {
-        print_weights(weights);
-
-        for(auto row : rows) {
-            train_weights(weights, row, -0.5);
-        }
-        error = model_error(rows, weights);
-        cout << "round " << rounds << " finished.\n";
-        cout << "model mean squared error on training data: " << error << "\n";
-        for(auto row : rows) { // = rows[0];;) {
-
-            valarray<double> model_out = model_output(weights, row.x);
-
-            cout << from_model_output(model_out) << " : " << row.y << "\n";
-            if(row.y == lround(from_model_output(model_out))) count++;
-
-        }
-    cout << "num right: " << count << "/" << rows.size() << "\n";
-    count = 0;
-    rounds++;
+    for(int i {0};i < 10; i++){
+      cout << "model weight " << i << " is " << *(model.weights+i) << "\n";
     }
 
     return 0;
 }
+
+
+//    cout << "model mean squared error on training data: " << model_error(rows, weights) << "\n";
+//    int count = 0;
+//    double error = 9999;
+//    int rounds = 1;
+//    for(auto row : rows) { // = rows[0];;) {
+//
+//        valarray<double> model_out = model_output(weights, row.x);
+//
+//        cout << from_model_output(model_out) << " : " << row.y << "\n";
+//        if(row.y == round(from_model_output(model_out))) count++;
+//
+//    }
+//    cout << "num right: " << count << "/" << rows.size() << "\n";
+//    count = 0;
+//    while(error > 0.05) {
+//        //print_weights(weights);
+//
+//        for(auto row : rows) {
+//            train_weights(weights, row, -0.05);
+//        }
+//        error = model_error(rows, weights);
+//        cout << "round " << rounds << " finished.\n";
+//        cout << "model mean squared error on training data: " << error << "\n";
+//        for(auto row : rows) { // = rows[0];;) {
+//
+//            valarray<double> model_out = model_output(weights, row.x);
+//
+//            cout << from_model_output(model_out) << " : " << row.y << "\n";
+//            if(row.y == lround(from_model_output(model_out))) count++;
+//
+//        }
+//    cout << "num right: " << count << "/" << rows.size() << "\n";
+//    count = 0;
+//    rounds++;
+//    }
+//
+//    return 0;
+//}
