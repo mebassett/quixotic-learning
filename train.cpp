@@ -122,9 +122,8 @@ Model_Weights_Improved initiate_weights_ ( unsigned int input_size
     return {weights, input_size, num_nodes, output_size };
 }
 
-double** get_weights0_to_j_from_i( Model_Weights_Improved model
-                                 , unsigned int j
-                                 , unsigned int i) {
+double** get_weights0_to_j( Model_Weights_Improved& model
+                          , unsigned int j) {
   double** ret = new double*[model.input_size];
 
   for(int i {0}; i < model.input_size; i++) {
@@ -199,6 +198,14 @@ double layer_0_output(Model_Weights& weights, unsigned int j, valarray<double>& 
   return layer_0_activation((weights.layer0_weights[j] * input).sum());
 }
 
+double layer_0_output(Model_Weights_Improved& model, unsigned int j, valarray<double>& input) {
+    double** rel_weights = get_weights0_to_j(model, j);
+    double ret {1};
+    for (int i {0}; i< model.input_size; i++)
+        ret += *((*rel_weights) + 1) * input[i]; 
+    return layer_0_activation(ret);
+}
+
 valarray<double> all_layer_0_outputs(Model_Weights& weights, valarray<double>& input) {
     valarray<double> output_0(weights.num_hidden_nodes);
     for(int i =0; i< weights.num_hidden_nodes; i++) {
@@ -206,6 +213,13 @@ valarray<double> all_layer_0_outputs(Model_Weights& weights, valarray<double>& i
     }
     return output_0;
 
+}
+
+void all_layer_0_outputs( Model_Weights_Improved& model
+                        , valarray<double>& output_0
+                        , valarray<double>& input) {
+    for(int i {0}; i < model.num_hidden_nodes; i++ )
+        output_0[i] = layer_0_output(model, i, input);
 }
 
 double layer_1_output(Model_Weights& weights, unsigned int j, valarray<double>& input) {
@@ -343,6 +357,13 @@ int main(void) {
     for(int i {0};i < 10; i++){
       cout << "model weight " << i << " is " << *(model.weights+i) << "\n";
     }
+
+    double** test = get_weights0_to_j(model, 5);
+    for(int i {0}; i < INPUT_SIZE+1; i++) {
+        cout << "model weight to j from " << i << ": " << *((*test)+i) << "\n";
+    }
+
+    cout << "output^0_0 = " << layer_0_output(model, 0, rows[0].x) << "\n";
 
     return 0;
 }
