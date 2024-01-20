@@ -210,12 +210,18 @@ double layer_0_output(Model_Weights& weights, unsigned int j, valarray<double>& 
   return layer_0_activation((weights.layer0_weights[j] * input).sum());
 }
 
-double layer_0_output(Model_Weights_Improved& model, unsigned int j, valarray<double>& input) {
+struct LayerOutput {
+  double output;
+  double dot_product;
+  double activation_prime;
+};
+
+LayerOutput layer_0_output(Model_Weights_Improved& model, unsigned int j, valarray<double>& input) {
     double** rel_weights = get_weights0_to_j(model, j);
     double ret {1};
     for (int i {0}; i< model.input_size; i++)
         ret += *((*rel_weights) + 1) * input[i]; 
-    return layer_0_activation(ret);
+    return {layer_0_activation(ret), ret, layer_0_activation_prime(ret)};
 }
 
 valarray<double> all_layer_0_outputs(Model_Weights& weights, valarray<double>& input) {
@@ -227,9 +233,10 @@ valarray<double> all_layer_0_outputs(Model_Weights& weights, valarray<double>& i
 
 }
 
+
 void all_layer_0_outputs( Model_Weights_Improved& model
                         , valarray<double>& input
-                        , valarray<double>& output_0) {
+                        , valarray<LayerOutput>& output_0) {
     for(int i {0}; i < model.num_hidden_nodes; i++ )
         output_0[i] = layer_0_output(model, i, input);
 }
@@ -239,16 +246,17 @@ double layer_1_output(Model_Weights& weights, unsigned int j, valarray<double>& 
     return layer_1_activation( (weights.layer1_weights[j] * output_0).sum() );
 }
 
-double layer_1_output( Model_Weights_Improved& model
-                   , valarray<double>& output_0_for_input
+LayerOutput layer_1_output( Model_Weights_Improved& model
+                   , valarray<LayerOutput>& output_0_for_input
                    , unsigned int j) {
     double** weights { get_weights1_to_j(model, j) };
     double ret {0};
 
     for(int i {0}; i<model.num_hidden_nodes;i++) 
-        ret += *(*weights+i) * output_0_for_input[i];
+        ret += *(*weights+i) * output_0_for_input[i].output;
 
-    return layer_1_activation ( ret );
+    return { layer_1_activation ( ret ), ret, layer_1_activation_prime(ret) };
+
 }
 
 
@@ -261,10 +269,8 @@ valarray<double> model_output(Model_Weights& weights, valarray<double>& input) {
 }
 
 void model_output( Model_Weights_Improved& model 
-                 , valarray<double>& input 
-                 , valarray<double>& output_1) {
-    valarray<double> output_0 (model.num_hidden_nodes);
-    all_layer_0_outputs(model, input, output_0);
+                 , valarray<LayerOutput>& output_0
+                 , valarray<LayerOutput>& output_1) {
 
     for(int j { 0 }; j < model.output_size; j++)
         output_1[j] = layer_1_output(model, output_0, j);
@@ -313,6 +319,75 @@ double del_err_by_weight_0_K_J (Model_Weights& weights, int K, int J, Training_D
            * (activation_vector * relevant_weights).sum()
            * layer_0_output(weights, J, row.x)
            * row.x[K];
+
+}
+
+void train_weights( Model_Weights_Improved& model
+                  , Training_Datum& row
+                  , double learning_rate ) {
+    int weights0_size = model.input_size * model.num_hidden_nodes;
+    int weights1_size = model.num_hidden_nodes * model.output_size;
+    double grad_weights[weights0_size + weights1_size] {};
+
+    valarray<LayerOutput> output_0 (model.num_hidden_nodes);
+    all_layer_0_outputs(model, row.x, output_0);
+
+    valarray<LayerOutput> output_1 (model.output_size);
+    model_output(model, output_0, output_1);
+
+    valarray<double> output_1_out ( model.output_size);
+    valarray<double> output_1_weights ( model.output_size);
+    valarray<double> output_1_prime ( model.output_size);
+    for(int i {0}; i<model.output_size;i++){
+        output_1_out[i] = output_1[i].output;
+        output_1_weights[i] = output_1[i].dot_product;
+        output_1_prime[i] = output_1[i].activation_prime;
+    }
+
+
+
+    valarray<double> errors = row.t - output_1_out;
+
+    valarray<double> weight0_activation_vector =
+        errors * output_1_prime;
+
+
+    for(int j {0}; j < model.num_hidden_nodes; j++){
+        
+        valarray<double> relevant_weights ( model.output_size);
+        for(int l {0}; l<model.output_size;l++){
+            unsigned int index = weights0_size + l*model.num_hidden_nodes + j;
+            relevant_weights[l] = *(model.weights+index);
+        }
+
+        double activation_term =
+          (relevant_weights * weight0_activation_vector).sum();
+
+        for(int k {0}; k < model.input_size; k++){
+            unsigned int index { j*model.input_size+k };
+
+            grad_weights[index] = - learning_rate
+                                * activation_term
+                                * output_0[j].output
+                                * output_0[j].activation_prime
+                                * row.x[k];
+        }
+    }
+
+    for(int j {0}; j<model.output_size; j++){
+        for(int i {0}; i<model.num_hidden_nodes;i++){
+            int index = weights0_size + j*model.num_hidden_nodes + i;
+
+            grad_weights[index] = - learning_rate
+                                * errors[j]
+                                * output_1_prime[j]
+                                * output_0[i].output;
+        }
+    }
+
+    for(int i {0}; i < weights0_size + weights1_size; i++) {
+        *(model.weights+i) = *(model.weights+i) + grad_weights[i];
+    }
 
 }
 
@@ -390,6 +465,10 @@ int main(void) {
     Model_Weights_Improved model = initiate_weights_(INPUT_SIZE+1, 28, OUTPUT_SIZE);
     Model_Weights weights = initiate_weights(INPUT_SIZE+1, 28, OUTPUT_SIZE);
 
+    for(auto row : rows) {
+        train_weights(model, row, -0.05);
+        train_weights(weights, row, -0.05);
+    }
 
     for(int i {0};i < 10; i++){
       cout << "model weight " << i << " is " << *(model.weights+i) << "\n";
@@ -403,11 +482,11 @@ int main(void) {
              << "\n";
     }
 
-    cout << "output^0_0 = " << layer_0_output(model, 1, rows[0].x) << "\n";
+    cout << "output^0_0 = " << layer_0_output(model, 1, rows[0].x).output << "\n";
     cout << "output^0_0 = " << layer_0_output(weights, 1, rows[0].x) << "\n";
 
     valarray<double> output_0_org = all_layer_0_outputs(weights, rows[0].x);
-    valarray<double> output_0_new (28);
+    valarray<LayerOutput> output_0_new (28);
     all_layer_0_outputs(model, rows[0].x, output_0_new);
 
     cout << "\n\noutput 0:\n";
@@ -415,19 +494,24 @@ int main(void) {
         cout << i << " org says: " 
              << output_0_org[i]
              << " new says: "
-             << output_0_new[i]
+             << output_0_new[i].output
              << "\n";
     }
 
     for(int i {0}; i< 10; i++) {
         valarray<double> output_org { model_output(weights, rows[i].x) };
-        valarray<double> output_new (model.output_size);
-        model_output(model, rows[i].x, output_new);
+
+        valarray<LayerOutput> output_0 (28);
+        all_layer_0_outputs(model, rows[i].x, output_0);
+        valarray<LayerOutput> output_new (model.output_size);
+        model_output(model, output_0, output_new);
 
         cout << "\ncomparing the " << i << "th output..\n";
         for(int j {0};j < model.output_size;j++)
-            cout << j << " org says: " << output_org[j] << " new says: " << output_new[j] << "\n";
+            cout << j << " org says: " << output_org[j] << " new says: " 
+                 << output_new[j].output << "\n";
     }
+
 
     return 0;
 }
