@@ -116,7 +116,7 @@ Model_Weights_Improved initiate_weights_ ( unsigned int input_size
 
     auto get_rand = [&](){ return dis(rd); } ;
     for(int i {0}; i < weights0_size+weights1_size;i++){
-        *(weights+i) = get_rand();
+        *(weights+i) = i*1.0;//get_rand();
     }
 
     return {weights, input_size, num_nodes, output_size };
@@ -131,6 +131,18 @@ double** get_weights0_to_j( Model_Weights_Improved& model
   }
 
   return ret;
+}
+
+double** get_weights1_to_j( Model_Weights_Improved& model
+                          , unsigned int j ) {
+    double** ret = new double*[model.num_hidden_nodes];
+
+    for(int i {0}; i < model.num_hidden_nodes; i++) {
+      *(ret+i) = 
+        model.weights + (model.input_size * model.num_hidden_nodes 
+                        + j*model.num_hidden_nodes + i);
+    }
+    return ret;
 }
 
 
@@ -152,7 +164,7 @@ Model_Weights initiate_weights( unsigned int input_size
     for(int j = 0; j<num_nodes;j++) {
       valarray<double> weights(input_size);
       for(int i =0; i<input_size; i++){
-        weights[i] =  get_rand();
+        weights[i] =  (j*input_size + i) *1.0 ;//get_rand();
       }
       w0.push_back(weights);
 
@@ -161,7 +173,7 @@ Model_Weights initiate_weights( unsigned int input_size
     for(int j=0; j<output_size;j++) {
       valarray<double> weights (num_nodes);
       for(int i =0; i<num_nodes;i++){
-        weights[i] = get_rand() ;
+        weights[i] = (j*num_nodes + i + input_size*num_nodes) * 1.0;//get_rand() ;
       }
       w1.push_back(weights);
     }
@@ -216,18 +228,29 @@ valarray<double> all_layer_0_outputs(Model_Weights& weights, valarray<double>& i
 }
 
 void all_layer_0_outputs( Model_Weights_Improved& model
-                        , valarray<double>& output_0
-                        , valarray<double>& input) {
+                        , valarray<double>& input
+                        , valarray<double>& output_0) {
     for(int i {0}; i < model.num_hidden_nodes; i++ )
         output_0[i] = layer_0_output(model, i, input);
 }
 
 double layer_1_output(Model_Weights& weights, unsigned int j, valarray<double>& input) {
     valarray<double> output_0 = all_layer_0_outputs(weights, input);
-
-
     return layer_1_activation( (weights.layer1_weights[j] * output_0).sum() );
 }
+
+double layer_1_output( Model_Weights_Improved& model
+                   , valarray<double>& output_0_for_input
+                   , unsigned int j) {
+    double** weights { get_weights1_to_j(model, j) };
+    double ret {0};
+
+    for(int i {0}; i<model.num_hidden_nodes;i++) 
+        ret += *(*weights+i) * output_0_for_input[i];
+
+    return layer_1_activation ( ret );
+}
+
 
 valarray<double> model_output(Model_Weights& weights, valarray<double>& input) {
   valarray<double> ret(weights.output_size);
@@ -235,6 +258,18 @@ valarray<double> model_output(Model_Weights& weights, valarray<double>& input) {
     ret[j] = layer_1_output(weights, j, input);
   }
   return ret;
+}
+
+void model_output( Model_Weights_Improved& model 
+                 , valarray<double>& input 
+                 , valarray<double>& output_1) {
+    valarray<double> output_0 (model.num_hidden_nodes);
+    all_layer_0_outputs(model, input, output_0);
+
+    for(int j { 0 }; j < model.output_size; j++)
+        output_1[j] = layer_1_output(model, output_0, j);
+
+     
 }
 
 double from_model_output(valarray<double>& out) {
@@ -353,17 +388,46 @@ void print_weights(Model_Weights& weights) {
 int main(void) {
     Training_Data rows = load_data_from_file("mnist_train.txt");
     Model_Weights_Improved model = initiate_weights_(INPUT_SIZE+1, 28, OUTPUT_SIZE);
+    Model_Weights weights = initiate_weights(INPUT_SIZE+1, 28, OUTPUT_SIZE);
+
 
     for(int i {0};i < 10; i++){
       cout << "model weight " << i << " is " << *(model.weights+i) << "\n";
     }
 
-    double** test = get_weights0_to_j(model, 5);
-    for(int i {0}; i < INPUT_SIZE+1; i++) {
-        cout << "model weight to j from " << i << ": " << *((*test)+i) << "\n";
+    double** test = get_weights1_to_j(model, 5);
+    for(int i {0}; i < 28; i++) {
+        cout << "new model weight to j from " << i << ": " << *((*test)+i) 
+             << " old model weight to j from " << i << ": "
+             << weights.layer1_weights[5][i]
+             << "\n";
     }
 
-    cout << "output^0_0 = " << layer_0_output(model, 0, rows[0].x) << "\n";
+    cout << "output^0_0 = " << layer_0_output(model, 1, rows[0].x) << "\n";
+    cout << "output^0_0 = " << layer_0_output(weights, 1, rows[0].x) << "\n";
+
+    valarray<double> output_0_org = all_layer_0_outputs(weights, rows[0].x);
+    valarray<double> output_0_new (28);
+    all_layer_0_outputs(model, rows[0].x, output_0_new);
+
+    cout << "\n\noutput 0:\n";
+    for(int i {0}; i<28; i++){
+        cout << i << " org says: " 
+             << output_0_org[i]
+             << " new says: "
+             << output_0_new[i]
+             << "\n";
+    }
+
+    for(int i {0}; i< 10; i++) {
+        valarray<double> output_org { model_output(weights, rows[i].x) };
+        valarray<double> output_new (model.output_size);
+        model_output(model, rows[i].x, output_new);
+
+        cout << "\ncomparing the " << i << "th output..\n";
+        for(int j {0};j < model.output_size;j++)
+            cout << j << " org says: " << output_org[j] << " new says: " << output_new[j] << "\n";
+    }
 
     return 0;
 }
