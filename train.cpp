@@ -81,7 +81,6 @@ Training_Data load_data_from_file(string filename) {
     
       }
       current_row = {};
-      if(rows.size() >= 10) return rows;
   }
   return rows;
 }
@@ -313,10 +312,10 @@ double model_error(Training_Data& data, FFNN_Model& model) {
 
     for (auto& row : data) {
         all_layer_0_outputs(model, row.x, output_0);
-        //model_output(model, output_0, model_out);
+        model_output(model, output_0, model_out);
 
-        //sigma = row.t - model_out;
-        //sigma *= sigma;
+        sigma = row.t - model_out;
+        sigma *= sigma;
         err += sigma.sum();
 
     }
@@ -493,7 +492,6 @@ int main(void) {
 
     for(auto row : rows) {
         train_weights(model, row, -0.05);
-        train_weights(weights, row, -0.05);
     }
 
     for(int i {0};i < 10; i++){
