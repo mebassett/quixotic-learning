@@ -495,6 +495,7 @@ void print_weights(Model_Weights& weights) {
 
 int main(void) {
     Training_Data rows = load_data_from_file("mnist_train.txt");
+    Training_Data test_rows = load_data_from_file("mnist_test.txt");
     FFNN_Model model = initiate_weights_(INPUT_SIZE+1, 28, OUTPUT_SIZE);
 
     Model_Weights weights = initiate_weights(INPUT_SIZE+1, 28, OUTPUT_SIZE);
@@ -569,22 +570,22 @@ int main(void) {
         for(auto row : rows) {
             train_weights(model, row, -0.05);
         }
-        error = model_error(rows, model);
+        error = model_error(test_rows, model);
         cout << "round " << rounds << " finished.\n";
-        cout << "model mean squared error on training data: " << error << "\n";
-        //for(auto row : rows) { // = rows[0];;) {
+        cout << "model mean squared error on test data: " << error << "\n";
+        for(auto row : test_rows) { // = rows[0];;) {
 
-        //    valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
-        //    all_layer_0_outputs(model, row.x, output_0);
-        //    model_output(model, output_0, model_out);
+            valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
+            all_layer_0_outputs(model, row.x, output_0);
+            model_output(model, output_0, model_out);
 
-        //    cout << from_model_output(model_out) << " : " << row.y << "\n";
-        //    if(row.y == lround(from_model_output(model_out))) count++;
+            //cout << from_model_output(model_out) << " : " << row.y << "\n";
+            if(row.y == lround(from_model_output(model_out))) count++;
 
-        //}
-    cout << "num right: " << count << "/" << rows.size() << "\n";
-    count = 0;
-    rounds++;
+        }
+        cout << "num right: " << count << "/" << test_rows.size() << "\n";
+        count = 0;
+        rounds++;
     }
 
     return 0;
