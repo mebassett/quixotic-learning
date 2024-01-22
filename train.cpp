@@ -45,7 +45,7 @@ void print_outs(Training_Data& rows) {
     }
 }
 
-Training_Data load_data_from_file(string filename) {
+Training_Data load_data_from_file(string filename, int cutoff) {
   ifstream ifs {filename};
 
   if(!ifs) {
@@ -80,7 +80,7 @@ Training_Data load_data_from_file(string filename) {
         }
     
       }
-      current_row = {};
+      if(rows.size() >= cutoff) return rows;
   }
   return rows;
 }
@@ -494,77 +494,15 @@ void print_weights(Model_Weights& weights) {
 
 
 int main(void) {
-    Training_Data rows = load_data_from_file("mnist_train.txt");
-    Training_Data test_rows = load_data_from_file("mnist_test.txt");
-    FFNN_Model model = initiate_weights_(INPUT_SIZE+1, 28, OUTPUT_SIZE);
-
-    Model_Weights weights = initiate_weights(INPUT_SIZE+1, 28, OUTPUT_SIZE);
-
-    for(auto row : rows) {
-        train_weights(model, row, -0.05);
-    }
-
-    for(int i {0};i < 10; i++){
-      cout << "model weight " << i << " is " << *(model.weights+i) << "\n";
-    }
-
-    double** test = get_weights1_to_j(model, 5);
-    for(int i {0}; i < 28; i++) {
-        cout << "new model weight to j from " << i << ": " << *((*test)+i) 
-             << " old model weight to j from " << i << ": "
-             << weights.layer1_weights[5][i]
-             << "\n";
-    }
-
-    cout << "output^0_0 = " << layer_0_output(model, 1, rows[0].x).output << "\n";
-    cout << "output^0_0 = " << layer_0_output(weights, 1, rows[0].x) << "\n";
-
-    valarray<double> output_0_org = all_layer_0_outputs(weights, rows[0].x);
-    valarray<LayerOutput> output_0_new (28);
-    all_layer_0_outputs(model, rows[0].x, output_0_new);
-
-    cout << "\n\noutput 0:\n";
-    for(int i {0}; i<28; i++){
-        cout << i << " org says: " 
-             << output_0_org[i]
-             << " new says: "
-             << output_0_new[i].output
-             << "\n";
-    }
-
-    for(int i {0}; i< 10; i++) {
-        valarray<double> output_org { model_output(weights, rows[i].x) };
-
-        valarray<LayerOutput> output_0 (28);
-        all_layer_0_outputs(model, rows[i].x, output_0);
-        valarray<LayerOutput> output_new (model.output_size);
-        model_output(model, output_0, output_new);
-
-        cout << "\ncomparing the " << i << "th output.."
-             << " y is " << rows[i].y
-             << " and x204 is " << rows[i].x[204] << "\n";
-        for(int j {0};j < model.output_size;j++)
-            cout << j << " org says: " << output_org[j] << " new says: " 
-                 << output_new[j].output <<  "\n";
-    }
+    Training_Data rows = load_data_from_file("mnist_train.txt", 60000);
+    Training_Data test_rows = load_data_from_file("mnist_test.txt", 10000);
+    FFNN_Model model = initiate_weights_(INPUT_SIZE+1, 200, OUTPUT_SIZE);
 
 
     cout << "model mean squared error on training data: " << model_error(rows, model) << "\n";
     int count = 0;
     double error = 9999;
     int rounds = 1;
-    for(auto row : rows) { // = rows[0];;) {
-
-        valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
-        all_layer_0_outputs(model, row.x, output_0);
-        model_output(model, output_0, model_out);
-
-        cout << from_model_output(model_out) << " : " << row.y << "\n";
-        if(row.y == round(from_model_output(model_out))) count++;
-
-    }
-    cout << "num right: " << count << "/" << rows.size() << "\n";
-    count = 0;
     while(error > 0.05) {
 
         for(auto row : rows) {
@@ -583,7 +521,7 @@ int main(void) {
             if(row.y == lround(from_model_output(model_out))) count++;
 
         }
-        cout << "num right: " << count << "/" << test_rows.size() << "\n";
+        cout << "num right on test data: " << count << "/" << test_rows.size() << "\n";
         count = 0;
         rounds++;
     }
