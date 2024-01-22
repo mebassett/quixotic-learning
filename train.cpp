@@ -110,12 +110,12 @@ FFNN_Model initiate_weights_ ( unsigned int input_size
 
     random_device rd;  
     mt19937 gen(rd()); 
-    uniform_real_distribution<> dis(-10.05, 10.05);
+    uniform_real_distribution<> dis(-0.05, 0.05);
 
 
     auto get_rand = [&](){ return dis(rd); } ;
     for(int i {0}; i < weights0_size+weights1_size;i++){
-        *(weights+i) = i*1.0;//get_rand();
+        *(weights+i) = get_rand();
     }
 
     return {weights, input_size, num_nodes, output_size };
@@ -163,7 +163,7 @@ Model_Weights initiate_weights( unsigned int input_size
     for(int j = 0; j<num_nodes;j++) {
       valarray<double> weights(input_size);
       for(int i =0; i<input_size; i++){
-        weights[i] =  (j*input_size + i) *1.0 ;//get_rand();
+        weights[i] =  get_rand();
       }
       w0.push_back(weights);
 
@@ -172,7 +172,7 @@ Model_Weights initiate_weights( unsigned int input_size
     for(int j=0; j<output_size;j++) {
       valarray<double> weights (num_nodes);
       for(int i =0; i<num_nodes;i++){
-        weights[i] = (j*num_nodes + i + input_size*num_nodes) * 1.0;//get_rand() ;
+        weights[i] = get_rand() ;
       }
       w1.push_back(weights);
     }
@@ -217,11 +217,21 @@ struct LayerOutput {
   double operator-(double subtractand) {
     return this->output - subtractand;
   }
+
+  bool operator==(LayerOutput d) {
+    return d.output == this->output;
+  }
+
+  bool operator<(LayerOutput d) {
+    return this->output < d.output;
+  }
+
 };
 
 double operator-(double d, LayerOutput& l) {
     return d - l.output;
 }
+
 
 valarray<double> operator-(valarray<double>& sd, valarray<LayerOutput>& sl) {
     valarray<double> ret (sd.size());
@@ -233,12 +243,12 @@ valarray<double> operator-(valarray<double>& sd, valarray<LayerOutput>& sl) {
 
 LayerOutput layer_0_output(FFNN_Model& model, unsigned int j, valarray<double>& input) {
     double** rel_weights = get_weights0_to_j(model, j);
-    double ret {1};
+    double dotproduct {0};
     for (int i {0}; i< model.input_size; i++)
-        ret += *((*rel_weights) + 1) * input[i]; 
+        dotproduct += *((*rel_weights) + i) * input[i]; 
     delete rel_weights;
 
-    return {layer_0_activation(ret), ret, layer_0_activation_prime(ret)};
+    return {layer_0_activation(dotproduct), dotproduct, layer_0_activation_prime(dotproduct)};
 }
 
 valarray<double> all_layer_0_outputs(Model_Weights& weights, valarray<double>& input) {
@@ -275,7 +285,6 @@ LayerOutput layer_1_output( FFNN_Model& model
     delete weights;
 
     return { layer_1_activation ( ret ), ret, layer_1_activation_prime(ret) };
-
 }
 
 
@@ -297,7 +306,7 @@ void model_output( FFNN_Model& model
      
 }
 
-double from_model_output(valarray<double>& out) {
+double from_model_output(valarray<LayerOutput>& out) {
   for(int i=0; i<out.size(); i++) {
     if(out[i] == out.max()) return i;
   }
@@ -530,52 +539,53 @@ int main(void) {
         valarray<LayerOutput> output_new (model.output_size);
         model_output(model, output_0, output_new);
 
-        cout << "\ncomparing the " << i << "th output..\n";
+        cout << "\ncomparing the " << i << "th output.."
+             << " y is " << rows[i].y
+             << " and x204 is " << rows[i].x[204] << "\n";
         for(int j {0};j < model.output_size;j++)
             cout << j << " org says: " << output_org[j] << " new says: " 
-                 << output_new[j].output << "\n";
+                 << output_new[j].output <<  "\n";
     }
 
 
-//    return 0;
-//}
-
-
     cout << "model mean squared error on training data: " << model_error(rows, model) << "\n";
-    //int count = 0;
-    //double error = 9999;
-    //int rounds = 1;
-    //for(auto row : rows) { // = rows[0];;) {
+    int count = 0;
+    double error = 9999;
+    int rounds = 1;
+    for(auto row : rows) { // = rows[0];;) {
 
-    //    valarray<double> model_out = model_output(weights, row.x);
+        valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
+        all_layer_0_outputs(model, row.x, output_0);
+        model_output(model, output_0, model_out);
 
-    //    cout << from_model_output(model_out) << " : " << row.y << "\n";
-    //    if(row.y == round(from_model_output(model_out))) count++;
+        cout << from_model_output(model_out) << " : " << row.y << "\n";
+        if(row.y == round(from_model_output(model_out))) count++;
 
-    //}
-    //cout << "num right: " << count << "/" << rows.size() << "\n";
-    //count = 0;
-    //while(error > 0.05) {
-    //    //print_weights(weights);
+    }
+    cout << "num right: " << count << "/" << rows.size() << "\n";
+    count = 0;
+    while(error > 0.05) {
 
-    //    for(auto row : rows) {
-    //        train_weights(weights, row, -0.05);
-    //    }
-    //    error = model_error(rows, weights);
-    //    cout << "round " << rounds << " finished.\n";
-    //    cout << "model mean squared error on training data: " << error << "\n";
-    //    for(auto row : rows) { // = rows[0];;) {
+        for(auto row : rows) {
+            train_weights(model, row, -0.05);
+        }
+        error = model_error(rows, model);
+        cout << "round " << rounds << " finished.\n";
+        cout << "model mean squared error on training data: " << error << "\n";
+        //for(auto row : rows) { // = rows[0];;) {
 
-    //        valarray<double> model_out = model_output(weights, row.x);
+        //    valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
+        //    all_layer_0_outputs(model, row.x, output_0);
+        //    model_output(model, output_0, model_out);
 
-    //        cout << from_model_output(model_out) << " : " << row.y << "\n";
-    //        if(row.y == lround(from_model_output(model_out))) count++;
+        //    cout << from_model_output(model_out) << " : " << row.y << "\n";
+        //    if(row.y == lround(from_model_output(model_out))) count++;
 
-    //    }
-    //cout << "num right: " << count << "/" << rows.size() << "\n";
-    //count = 0;
-    //rounds++;
-    //}
+        //}
+    cout << "num right: " << count << "/" << rows.size() << "\n";
+    count = 0;
+    rounds++;
+    }
 
     return 0;
 }
