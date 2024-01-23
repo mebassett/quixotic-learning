@@ -496,11 +496,25 @@ void print_weights(Model_Weights& weights) {
 int main(void) {
     Training_Data rows = load_data_from_file("mnist_train.txt", 60000);
     Training_Data test_rows = load_data_from_file("mnist_test.txt", 10000);
-    FFNN_Model model = initiate_weights_(INPUT_SIZE+1, 200, OUTPUT_SIZE);
+    FFNN_Model model = initiate_weights_(INPUT_SIZE+1, 300, OUTPUT_SIZE);
+
+    int count = 0;
+    for(auto row : test_rows) { // = rows[0];;) {
+
+        valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
+        all_layer_0_outputs(model, row.x, output_0);
+        model_output(model, output_0, model_out);
+
+        //cout << from_model_output(model_out) << " : " << row.y << "\n";
+        if(row.y == lround(from_model_output(model_out))) count++;
+
+    }
+    cout << "num right on test data: " << count << "/" << test_rows.size() << "\n";
+    count = 0;
 
 
     cout << "model mean squared error on training data: " << model_error(rows, model) << "\n";
-    int count = 0;
+    cout << "model mean squared error on test data: " << model_error(test_rows, model) << "\n";
     double error = 9999;
     int rounds = 1;
     while(error > 0.05) {
