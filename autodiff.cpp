@@ -4,14 +4,14 @@
 using namespace std;
 
 struct AD {
-     virtual double operator()(valarray<double> x) = 0 ;
+     virtual double operator()() = 0;
 };
 
 struct AD_Constant: AD {
   double val;
   AD_Constant(double val): val(val) {}
 
-  double operator()(valarray<double> x) { return this->val; }
+  double operator()() { return this->val; }
 };
 
 struct AD_Plus: AD {
@@ -19,36 +19,60 @@ struct AD_Plus: AD {
 
   AD_Plus(AD& _augend, AD& _addend): augend(_augend), addend(_addend) {}
 
-  double operator()(valarray<double> x) {
-    if(x.size() != 2) 
-        throw invalid_argument("Arity does not match in Plus.");
-    return this->augend(x[slice(0,1,0)]) + this->addend(x[slice(1,1,0)]);
+  double operator()() {
+    return this->augend() + this->addend();
   }
+
+
+
+
 };
+
+struct AD_Mul: AD {
+    AD &plier, &plicand;
+
+    AD_Mul(AD& _plier, AD& _plicand): plier(_plier), plicand(_plicand) {}
+
+    double operator()() {
+        return this->plier() * this->plicand();
+    }
+};
+
 
 struct AD_Variable : AD {
+  double val = 0;
+  AD_Variable (double _val): val(_val) {}
 
-  double operator()(valarray<double> x) {
-      if(x.size() != 1)
-          throw invalid_argument("Arity does not match.");
-
-
-      return x[0];
+  void setValue(double _val) {
+      this->val = _val;
   }
 
-  AD_Plus operator+(AD& addend) {
-      return AD_Plus(*this, addend);
+  double operator()() {
+      return this->val;
   }
 
 };
 
+AD_Plus operator+(AD& augend, AD& addend) {
+    return AD_Plus(augend, addend);
+}
+
+AD_Mul operator*(AD& plier, AD& plicand) {
+    return AD_Mul(plier, plicand);
+}
+
 int main() {
-    AD_Variable x ;
-    AD_Variable y ;
+    AD_Variable x (2);
+    AD_Variable y (3);
+
+    AD_Plus d_ = x + y;
+    AD_Variable z (5);
 
 
-    AD_Plus z = y + x;
 
-    cout << "hello, world!\n" << z({2,3}) << "\n";
+
+    AD_Mul d = d_ * z ;
+
+    cout << "hello, world!\n" << d() << "\n";
     return 0;
 }
