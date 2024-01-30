@@ -7,6 +7,8 @@ using namespace std;
 struct AD {
      virtual double operator()(map<string, double> args) = 0;
      virtual double operator()() = 0;
+     virtual void take_gradient(double seed) = 0;
+     virtual double get_gradient() = 0;
      virtual ostream& to_stream(ostream& os)  = 0;
 
      double val = 0;
@@ -32,6 +34,10 @@ struct AD_Constant: AD {
   double operator()(map<string, double> args) { return this->val; }
   double operator()() { return this->val; }
 
+  void take_gradient(double seed) {}
+
+  double get_gradient() {return 0;}
+
 
   ostream& to_stream(ostream& os) {
       return os << " AD CONSTANT " << this->val << " " << this;
@@ -49,7 +55,8 @@ struct AD_Plus: AD {
   }
 
   double operator()() {
-      return this->augend() + this->addend();
+      this->val = this->augend() + this->addend();
+      return this->val;
   }
 
   double operator()(map<string, double> args) {
@@ -58,12 +65,32 @@ struct AD_Plus: AD {
 
       for(const auto& [varname, value] : args)
         (this->deps.at(varname))->setValue(value);
-      return this->augend() + this->addend();
-  }
 
+
+      this->val = this->augend() + this->addend();
+      return this->val;
+  }
   ostream& to_stream(ostream& os ) {
       return os << " AD Plus "  << this;
   }
+
+  void take_gradient(double seed) { 
+      this->addend.take_gradient(seed);
+      this->augend.take_gradient(seed);
+  }
+
+  map<string, double> grad() {
+      map<string, double> m;
+        this->take_gradient(1.0);
+
+      for(const auto& [varname, var] : this->deps) {
+          m.insert({varname, var->get_gradient()});
+      }
+      return m;
+  }
+  double get_gradient() {return 0;}
+
+
 
 };
 
@@ -77,7 +104,8 @@ struct AD_Mul: AD {
     }
 
     double operator()() {
-        return this->plier() + this->plicand();
+        this->val = this->plier() * this->plicand();
+        return val;
     }
 
     double operator()(map<string, double> args) {
@@ -88,16 +116,35 @@ struct AD_Mul: AD {
         (this->deps.at(varname))->setValue(value);
 
 
-      return this->plier() * this->plicand();
+      this->val = this->plier() * this->plicand();
+      return val;
     }
     ostream& to_stream(ostream& os) {
         return os << " AD Mul " << this;
     }
+    void take_gradient(double seed) { 
+        this->plier.take_gradient(seed * this->plicand.val);
+        this->plicand.take_gradient(seed * this->plier.val);
+    }
+
+    map<string, double> grad() {
+        map<string, double> m;
+
+        this->take_gradient(1.0);
+
+        for(const auto& [varname, var] : this->deps) {
+            m.insert({varname, var->get_gradient()});
+        }
+        return m;
+    }
+  double get_gradient() {return 0;}
+
 };
 
 
 struct AD_Variable : AD {
   string name;
+  double partial;
   AD_Variable (string _name): name(_name) {
       this->deps = {{_name, this}};
   }
@@ -113,6 +160,12 @@ struct AD_Variable : AD {
       return os << " AD Var " << this->name << " " << this;
   }
 
+  void take_gradient(double seed) {
+      this->partial += seed;
+  }
+  double get_gradient(){
+      return this->partial;
+  }
 };
 
 AD_Plus operator+(AD& augend, AD& addend) {
@@ -136,6 +189,13 @@ int main() {
 
     AD_Mul d = d_ * z ;
     cout << "hello, world!\n" << d({{"x", 5.0}, {"y", 9.0}, {"z", 2.0}}) << "\n";
+
+    map<string, double> grad = d.grad();
+
+    cout << "x partial " << x.get_gradient() << "\n";
+
+    for(const auto& [varname, partial] : grad) 
+        cout << "(del f/del " << varname << ") = " << partial << "\n";
 
     return 0;
 }
