@@ -1,12 +1,11 @@
 #include <iostream>
 #include<valarray>
-#include<set>
-#include<initializer_list>
+#include<map>
 
 using namespace std;
 
 struct AD {
-     virtual double operator()(initializer_list<double> args) = 0;
+     virtual double operator()(map<string, double> args) = 0;
      virtual double operator()() = 0;
      virtual ostream& to_stream(ostream& os)  = 0;
 
@@ -14,7 +13,7 @@ struct AD {
      void setValue( double _val) {
          this->val = _val;
      }
-     set<AD*> deps;
+     map<string, AD*> deps;
 
 
 };
@@ -30,7 +29,7 @@ struct AD_Constant: AD {
       this->deps = {};
   }
 
-  double operator()(initializer_list<double> args) { return this->val; }
+  double operator()(map<string, double> args) { return this->val; }
   double operator()() { return this->val; }
 
 
@@ -45,24 +44,20 @@ struct AD_Plus: AD {
 
   AD_Plus(AD& _augend, AD& _addend): augend(_augend), addend(_addend) {
       this->deps = {};
-      this->deps.insert(_augend.deps.begin(), _augend.deps.end());
-      this->deps.insert(_addend.deps.begin(), _addend.deps.end());
+      this->deps.merge(_augend.deps);
+      this->deps.merge(_addend.deps);
   }
 
   double operator()() {
       return this->augend() + this->addend();
   }
 
-  double operator()(initializer_list<double> args) {
+  double operator()(map<string, double> args) {
       if(args.size() == 0) 
         return this->augend() + this->addend();
 
-      int i {0};
-      for(auto var : this->deps){ 
-        var->setValue(*(data(args) + i));
-        i++;
-
-      }
+      for(const auto& [varname, value] : args)
+        (this->deps.at(varname))->setValue(value);
       return this->augend() + this->addend();
   }
 
@@ -77,25 +72,21 @@ struct AD_Mul: AD {
 
     AD_Mul(AD& _plier, AD& _plicand): plier(_plier), plicand(_plicand) {
       this->deps = {};
-      this->deps.insert(_plicand.deps.begin(), _plicand.deps.end());
-      this->deps.insert(_plier.deps.begin(), _plier.deps.end());
+      this->deps.merge(_plicand.deps);
+      this->deps.merge(_plier.deps);
     }
 
     double operator()() {
         return this->plier() + this->plicand();
     }
 
-    double operator()(initializer_list<double> args) {
+    double operator()(map<string, double> args) {
       if(args.size() == 0) 
         return this->plier() * this->plicand();
 
-      int i {0};
-      for(auto *var : this->deps) {
-        cout << *var << " : " << *(data(args) + i) << "\n";
-        var->setValue(*(data(args) + i));
-        i++;
+      for(const auto& [varname, value] : args)
+        (this->deps.at(varname))->setValue(value);
 
-      }
 
       return this->plier() * this->plicand();
     }
@@ -107,16 +98,15 @@ struct AD_Mul: AD {
 
 struct AD_Variable : AD {
   string name;
-  AD_Variable (double _val, string _name): name(_name) {
-      this->deps = {this};
-      this->val = _val;
+  AD_Variable (string _name): name(_name) {
+      this->deps = {{_name, this}};
   }
 
   double operator()() {
       return this->val;
   }
 
-  double operator()(initializer_list<double> args) {
+  double operator()(map<string, double> args) {
       return this->val;
   }
   ostream& to_stream(ostream& os) {
@@ -135,17 +125,17 @@ AD_Mul operator*(AD& plier, AD& plicand) {
 
 
 int main() {
-    AD_Variable x (0,"x");
-    AD_Variable y (0,"y");
+    AD_Variable x ("x");
+    AD_Variable y ("y");
 
     AD_Plus d_ = x + y;
-    AD_Variable z (0,"z");
+    AD_Variable z ("z");
 
 
 
 
     AD_Mul d = d_ * z ;
-    cout << "hello, world!\n" << d({5.0,9.0, 1.0}) << "\n";
+    cout << "hello, world!\n" << d({{"x", 5.0}, {"y", 9.0}, {"z", 2.0}}) << "\n";
 
     return 0;
 }
