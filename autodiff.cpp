@@ -4,6 +4,85 @@
 
 using namespace std;
 
+struct ADV {
+    virtual void take_gradient(double seed) = 0;
+    virtual double* get_gradient() = 0;
+    virtual double* operator()(map<string, double*> args) = 0;
+    virtual double* operator()() = 0;
+    virtual void setValue ( double* _val ) = 0;
+    virtual const unsigned int size() = 0;
+    virtual ostream& to_stream(ostream& os) = 0;
+};
+
+ostream& operator<<(ostream& os, ADV& obj) {
+    return obj.to_stream(os);
+}
+
+struct ADV_Vec : ADV {
+    double* val;
+    double* grad;
+    unsigned int vector_length;
+    string name;
+
+    void take_gradient(double seed) {
+        for(int i {0}; i<this->vector_length; i++)
+            *(this->val + i) += seed;
+        
+    }
+    double* get_gradient() {
+        return this->grad;
+    }
+    double* operator()() {
+        return this->val;
+    }
+    double* operator()(map<string, double*> args) {
+        return (*this)();
+    }
+    void setValue (double* _val)  {
+        this->val = _val;
+    }
+
+    const unsigned int size() {
+        return this->vector_length;
+    }
+
+    ostream& to_stream(ostream& os) {
+      return os << " AD Vector " << this->name << " @ " << this;
+    }
+
+    ADV_Vec(string _name, unsigned int _size) : name(_name), vector_length(_size) {
+        this->val = new double[_size];
+    }
+
+    ~ADV_Vec() {
+        delete this->val;
+    }
+
+};
+
+struct ADV_InnerProduct: ADV {
+    double* grad;
+    map<string, ADV*> deps;
+
+    void take_gradient(double seed) {
+    }
+
+    double* get_gradient() {
+        return this->grad;
+    }
+
+    double* operator()(map<string, double*> args) {
+        for(auto [vector_name, value] : args)
+            this->deps.at(vector_name)->setValue(value);
+
+
+
+    }
+
+
+};
+
+
 struct AD {
      virtual double operator()(map<string, double> args) = 0;
      virtual double operator()() = 0;
@@ -177,25 +256,28 @@ AD_Mul operator*(AD& plier, AD& plicand) {
 }
 
 
+
 int main() {
-    AD_Variable x ("x");
-    AD_Variable y ("y");
+    //AD_Variable x ("x");
+    //AD_Variable y ("y");
 
-    AD_Plus d_ = x + y;
-    AD_Variable z ("z");
-
-
+    //AD_Plus d_ = x + y;
+    //AD_Variable z ("z");
 
 
-    AD_Mul d = d_ * z ;
-    cout << "hello, world!\n" << d({{"x", 5.0}, {"y", 9.0}, {"z", 2.0}}) << "\n";
 
-    map<string, double> grad = d.grad();
 
-    cout << "x partial " << x.get_gradient() << "\n";
+    //AD_Mul d = d_ * z ;
+    //cout << "hello, world!\n" << d({{"x", 5.0}, {"y", 9.0}, {"z", 2.0}}) << "\n";
 
-    for(const auto& [varname, partial] : grad) 
-        cout << "(del f/del " << varname << ") = " << partial << "\n";
+    //map<string, double> grad = d.grad();
+
+    //cout << "x partial " << x.get_gradient() << "\n";
+
+    //for(const auto& [varname, partial] : grad) 
+    //    cout << "(del f/del " << varname << ") = " << partial << "\n";
+    //
+    ADV_Vec x ("x",10);
 
     return 0;
 }
