@@ -12,6 +12,8 @@ struct ADV {
     virtual void setValue ( double* _val ) = 0;
     virtual const unsigned int size() = 0;
     virtual ostream& to_stream(ostream& os) = 0;
+    map<string, ADV*> deps;
+    string name;
 };
 
 ostream& operator<<(ostream& os, ADV& obj) {
@@ -22,7 +24,6 @@ struct ADV_Vec : ADV {
     double* val;
     double* grad;
     unsigned int vector_length;
-    string name;
 
     void take_gradient(double seed) {
         for(int i {0}; i<this->vector_length; i++)
@@ -50,8 +51,9 @@ struct ADV_Vec : ADV {
       return os << " AD Vector " << this->name << " @ " << this;
     }
 
-    ADV_Vec(string _name, unsigned int _size) : name(_name), vector_length(_size) {
+    ADV_Vec(string _name, unsigned int _size) : vector_length(_size) {
         this->val = new double[_size];
+        this->name = _name;
     }
 
     ~ADV_Vec() {
@@ -62,7 +64,11 @@ struct ADV_Vec : ADV {
 
 struct ADV_InnerProduct: ADV {
     double* grad;
-    map<string, ADV*> deps;
+    double* value;
+    ADV& vec1;
+    ADV& vec2;
+
+    unsigned int input_size;
 
     void take_gradient(double seed) {
     }
@@ -71,12 +77,37 @@ struct ADV_InnerProduct: ADV {
         return this->grad;
     }
 
+    double* operator()() {
+        double* v1 = this->vec1(); 
+        double* v2 = this->vec2(); 
+        *(this->value)= 0;
+
+        for(int i {0};i>this->input_size;i++)
+            *(this->value) += *(v1 + i) * *(v2 + i);
+        return this->value;
+        
+    }
     double* operator()(map<string, double*> args) {
         for(auto [vector_name, value] : args)
             this->deps.at(vector_name)->setValue(value);
+        return (*this)();
+    }
+    void setValue(double* val) {}
 
+    const unsigned int size(){
+        return 1;
+    }
 
+    ostream& to_stream(ostream& os) {
+        return os << " ADV InnerProduct of " << this->vec1.name << " @ " 
+                  << &(this->vec1) << " and " << this->vec2.name << " @ "
+                  << &(this->vec2) << "\n";
+    }
 
+    ADV_InnerProduct(ADV& _v1, ADV& _v2): vec1(_v1), vec2(_v2) {
+      this->deps = {};
+      this->deps.merge(_v1.deps);
+      this->deps.merge(_v1.deps);
     }
 
 
@@ -277,7 +308,10 @@ int main() {
     //for(const auto& [varname, partial] : grad) 
     //    cout << "(del f/del " << varname << ") = " << partial << "\n";
     //
-    ADV_Vec x ("x",10);
+    ADV_Vec x ("x",3);
+    double x_[] = {1,2,3};
+    x.setValue(x_);
+
 
     return 0;
 }
