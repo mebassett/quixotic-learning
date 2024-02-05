@@ -52,12 +52,11 @@ struct ADV_Vec : ADV {
     }
 
     ADV_Vec(string _name, unsigned int _size) : vector_length(_size) {
-        this->val = new double[_size];
+        //this->val = new double[_size];
         this->name = _name;
     }
 
     ~ADV_Vec() {
-        delete this->val;
     }
 
 };
@@ -286,6 +285,17 @@ AD_Mul operator*(AD& plier, AD& plicand) {
     return AD_Mul(plier, plicand);
 }
 
+struct Simple {
+    double* myPointer;
+
+    void setVal(double* _myp) {
+        this->myPointer = _myp;
+    }
+
+    Simple(unsigned int size) {
+        this->myPointer = new double[size];
+    }
+};
 
 
 int main() {
@@ -309,8 +319,11 @@ int main() {
     //    cout << "(del f/del " << varname << ") = " << partial << "\n";
     //
     ADV_Vec x ("x",3);
-    double x_[] = {1,2,3};
-    x.setValue(x_);
+    double test[] = {1,2,3};
+
+    Simple simple(2);
+    simple.setVal(test);
+    x.setValue(simple.myPointer);
 
 
     return 0;
