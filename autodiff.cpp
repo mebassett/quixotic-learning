@@ -5,14 +5,15 @@
 using namespace std;
 
 struct ADV {
-    virtual void take_gradient(double seed) = 0;
-    virtual double* get_gradient() = 0;
-    virtual double* operator()(map<string, double*> args) = 0;
-    virtual double* operator()() = 0;
-    virtual void setValue ( double* _val ) = 0;
+    virtual void take_gradient(valarray<double> seed) = 0;
+    virtual valarray<double>& get_gradient() = 0;
+    virtual valarray<double>& operator()(map<string, valarray<double>> args) = 0;
+    virtual valarray<double>& operator()() = 0;
+    virtual void setValue (valarray<double> _val) = 0;
     virtual const unsigned int size() = 0;
     virtual ostream& to_stream(ostream& os) = 0;
     map<string, ADV*> deps;
+    valarray<double> val;
     string name;
 };
 
@@ -21,30 +22,29 @@ ostream& operator<<(ostream& os, ADV& obj) {
 }
 
 struct ADV_Vec : ADV {
-    double* val;
-    double* grad;
+    valarray<double> val;
+    valarray<double> grad;
     unsigned int vector_length;
 
-    void take_gradient(double seed) {
-        for(int i {0}; i<this->vector_length; i++)
-            *(this->val + i) += seed;
+    void take_gradient(valarray<double> seed) {
+       this->grad = seed; 
         
     }
-    double* get_gradient() {
+    valarray<double>& get_gradient() {
         return this->grad;
     }
-    double* operator()() {
+    valarray<double>& operator()() {
         return this->val;
     }
-    double* operator()(map<string, double*> args) {
+    valarray<double>& operator()(map<string, valarray<double>> args) {
         return (*this)();
     }
-    void setValue (double* _val)  {
+    void setValue (valarray<double> _val)  {
         this->val = _val;
     }
 
     const unsigned int size() {
-        return this->vector_length;
+        return this->val.size();
     }
 
     ostream& to_stream(ostream& os) {
@@ -52,8 +52,10 @@ struct ADV_Vec : ADV {
     }
 
     ADV_Vec(string _name, unsigned int _size) : vector_length(_size) {
-        //this->val = new double[_size];
+        this->val = valarray<double>(_size);
+        this->grad  =valarray<double>( (double) 0 , _size);
         this->name = _name;
+        this->deps = {{_name, this}};
     }
 
     ~ADV_Vec() {
@@ -62,36 +64,39 @@ struct ADV_Vec : ADV {
 };
 
 struct ADV_InnerProduct: ADV {
-    double* grad;
-    double* value;
+    valarray<double> grad;
+    valarray<double> value;
     ADV& vec1;
     ADV& vec2;
 
     unsigned int input_size;
+    void take_gradient(valarray<double> seed) {
 
-    void take_gradient(double seed) {
+        //seed.size() == this->size(), id est 1
+
+        this->vec1.take_gradient(seed[0] * this->vec2());
+        this->vec2.take_gradient(seed[0] * this->vec1());
     }
 
-    double* get_gradient() {
+    valarray<double>& get_gradient() {
         return this->grad;
     }
 
-    double* operator()() {
-        double* v1 = this->vec1(); 
-        double* v2 = this->vec2(); 
-        *(this->value)= 0;
+    valarray<double>& operator()() {
+        valarray<double> v1 = this->vec1(); 
+        valarray<double> v2 = this->vec2(); 
 
-        for(int i {0};i>this->input_size;i++)
-            *(this->value) += *(v1 + i) * *(v2 + i);
+        this->value = { (v1 + v2).sum() };
         return this->value;
         
     }
-    double* operator()(map<string, double*> args) {
+    valarray<double>& operator()(map<string, valarray<double>> args) {
         for(auto [vector_name, value] : args)
             this->deps.at(vector_name)->setValue(value);
+
         return (*this)();
     }
-    void setValue(double* val) {}
+    void setValue(valarray<double> _val) {}
 
     const unsigned int size(){
         return 1;
@@ -106,7 +111,7 @@ struct ADV_InnerProduct: ADV {
     ADV_InnerProduct(ADV& _v1, ADV& _v2): vec1(_v1), vec2(_v2) {
       this->deps = {};
       this->deps.merge(_v1.deps);
-      this->deps.merge(_v1.deps);
+      this->deps.merge(_v2.deps);
     }
 
 
@@ -319,11 +324,23 @@ int main() {
     //    cout << "(del f/del " << varname << ") = " << partial << "\n";
     //
     ADV_Vec x ("x",3);
-    double test[] = {1,2,3};
+    x.setValue({1,2,3});
 
-    Simple simple(2);
-    simple.setVal(test);
-    x.setValue(simple.myPointer);
+    ADV_Vec y {"y",3};
+    y.setValue({2,2,2});
+
+    ADV_InnerProduct z (x, y);
+
+    double inner_product = z({ {"x", {1,2,3}}, {"y", {2,2,2}}})[0];
+
+    cout << z << " : " << inner_product << "\n";
+    z.take_gradient({1});
+
+    valarray<double> x_grad = x.get_gradient();
+    cout << "x0: " << x_grad[0] << " x1: " << x_grad[1] << " x2: " << x_grad[2] <<"\n";
+
+
+
 
 
     return 0;
