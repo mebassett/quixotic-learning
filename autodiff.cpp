@@ -73,6 +73,9 @@ struct ADV_InnerProduct: ADV {
     void take_gradient(valarray<double> seed) {
 
         //seed.size() == this->size(), id est 1
+        cout << "vec1" << "\n"
+             << this->vec1().size() << "\n"
+             << this->vec1.val.size() << "\n";
 
         this->vec1.take_gradient(seed[0] * this->vec2());
         this->vec2.take_gradient(seed[0] * this->vec1());
