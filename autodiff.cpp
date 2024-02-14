@@ -22,12 +22,11 @@ ostream& operator<<(ostream& os, ADV& obj) {
 }
 
 struct ADV_Vec : ADV {
-    valarray<double> val;
     valarray<double> grad;
     unsigned int vector_length;
 
     void take_gradient(valarray<double> seed) {
-       this->grad = seed; 
+       this->grad += seed; 
         
     }
     valarray<double>& get_gradient() {
@@ -73,10 +72,6 @@ struct ADV_InnerProduct: ADV {
     void take_gradient(valarray<double> seed) {
 
         //seed.size() == this->size(), id est 1
-        cout << "vec1" << "\n"
-             << this->vec1().size() << "\n"
-             << this->vec1.val.size() << "\n";
-
         this->vec1.take_gradient(seed[0] * this->vec2());
         this->vec2.take_gradient(seed[0] * this->vec1());
     }
@@ -112,6 +107,7 @@ struct ADV_InnerProduct: ADV {
     }
 
     ADV_InnerProduct(ADV& _v1, ADV& _v2): vec1(_v1), vec2(_v2) {
+      //need to check that their sizes are equal.
       this->deps = {};
       this->deps.merge(_v1.deps);
       this->deps.merge(_v2.deps);
@@ -119,6 +115,13 @@ struct ADV_InnerProduct: ADV {
 
 
 };
+
+// need: 
+// ADV_VectorSum (must be same size)
+// ADV_VectorProduct (must be same size, or one must be size 1)
+// ADV_exp (acts on every component), also ADV_sin, ADV_cos, maybe ADV_ReLU
+// ADV_Concat (takes a list of size 1s and gives you a vec..)
+// I think that should do it!
 
 
 struct AD {
@@ -199,7 +202,7 @@ struct AD_Plus: AD {
   map<string, double> grad() {
       map<string, double> m;
         this->take_gradient(1.0);
-
+A
       for(const auto& [varname, var] : this->deps) {
           m.insert({varname, var->get_gradient()});
       }
@@ -293,18 +296,6 @@ AD_Mul operator*(AD& plier, AD& plicand) {
     return AD_Mul(plier, plicand);
 }
 
-struct Simple {
-    double* myPointer;
-
-    void setVal(double* _myp) {
-        this->myPointer = _myp;
-    }
-
-    Simple(unsigned int size) {
-        this->myPointer = new double[size];
-    }
-};
-
 
 int main() {
     //AD_Variable x ("x");
@@ -327,24 +318,20 @@ int main() {
     //    cout << "(del f/del " << varname << ") = " << partial << "\n";
     //
     ADV_Vec x ("x",3);
-    x.setValue({1,2,3});
 
     ADV_Vec y {"y",3};
-    y.setValue({2,2,2});
 
-    ADV_InnerProduct z (x, y);
+    ADV_InnerProduct z (x, x);
 
-    double inner_product = z({ {"x", {1,2,3}}, {"y", {2,2,2}}})[0];
+    double inner_product = z({ {"x", {1,2,3}}})[0];
 
     cout << z << " : " << inner_product << "\n";
+
+
     z.take_gradient({1});
 
     valarray<double> x_grad = x.get_gradient();
     cout << "x0: " << x_grad[0] << " x1: " << x_grad[1] << " x2: " << x_grad[2] <<"\n";
-
-
-
-
 
     return 0;
 }
