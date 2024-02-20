@@ -221,6 +221,23 @@ struct ADV_VectorProduct : ADV {
     }
 };
 
+struct ADV_Concat : ADV {
+    vector<ADV*> members;
+    valarray<double> grad;
+    valarray<double> value;
+
+    void take_gradient(valarray<double> seed) {
+        // seed.size == sum(member => member.sizer() for member in members
+        // we will assume member.size() == 1 always
+        for(m : members) {
+            h
+        }
+
+    }
+
+
+}
+
 
 
 struct AD {
