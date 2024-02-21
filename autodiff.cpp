@@ -229,11 +229,34 @@ struct ADV_Concat : ADV {
     void take_gradient(valarray<double> seed) {
         // seed.size == sum(member => member.sizer() for member in members
         // we will assume member.size() == 1 always
-        for(m : members) {
-            h
+        for(int i {0}; i<this->members.size(); i++) {
+            this->members[i]->take_gradient(seed[slice(i,1,1)]);
         }
-
+        this->grad = seed;
     }
+
+    valarray<double>& get_gradient() {
+        return this->grad;
+    }
+
+    valarray<double>& operator()() {
+        this->val = valarray<double>(this->members.size());
+        for(int i {0}; i<this->members.size();i++){
+            this->val[i] = *(this->members[i])();
+        }
+        return this->val;
+    }
+    valarray<double>& operator(map<string, valarray<double>> args) {
+        for(auto [name, value] : args)
+            this->deps.at(name)->setValue(value);
+        return (*this)();
+    }
+    void setValue(valarray<double> _val) {}
+    const unsigned int size() {
+        return this->vec1.size();
+    }
+
+
 
 
 }
