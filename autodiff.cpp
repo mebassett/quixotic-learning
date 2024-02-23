@@ -128,7 +128,6 @@ struct ADV_InnerProduct: ADV {
 
 struct ADV_Sum : ADV {
     valarray<double> grad;
-    valarray<double> value;
     ADV& vec1;
     ADV& vec2;
     void take_gradient(valarray<double> seed) {
@@ -176,7 +175,6 @@ struct ADV_Sum : ADV {
 
 struct ADV_VectorProduct : ADV {
     valarray<double> grad;
-    valarray<double> value;
     ADV& vec1;
     ADV& vec2;
     void take_gradient(valarray<double> seed) {
@@ -225,7 +223,6 @@ struct ADV_VectorProduct : ADV {
 struct ADV_Concat : ADV {
     vector<ADV*> members;
     valarray<double> grad;
-    valarray<double> value;
 
     void take_gradient(valarray<double> seed) {
         // seed.size == sum(member => member.sizer() for member in members
@@ -269,6 +266,43 @@ struct ADV_Concat : ADV {
             this->name += m->name + " ";
         }
         this->grad = valarray<double>((double)0,_members.size());
+    }
+};
+
+struct ADV_Exp : ADV {
+    ADV* input;
+    valarray<double> grad;
+
+    void take_gradient(valarray<double> seed) {
+        this->input->take_gradient(this->val * seed) ;
+    }
+
+    valarray<double>& get_gradient() {
+        return this->grad;
+    }
+
+    valarray<double>& operator()() {
+        this->val= exp((*this->input)());
+        return this->val;
+    }
+    valarray<double>& operator()(map<string, valarray<double>> args) {
+        for(auto [name, value] : args)
+            this->deps.at(name)->setValue(value);
+        return (*this)();
+    }
+    void setValue(valarray<double> _val) {}
+    const unsigned int size() {
+        return this->input->size();
+    }
+    ostream& to_stream(ostream& os) {
+        return os << this->name;
+    }
+
+    ADV_Exp(ADV* _input): input(_input) {
+        // should have a check to ensure they are all size 1...
+        this->deps = _input->deps;
+        this->name = "ADVExp of " + _input->name;
+        this->grad = valarray<double>((double)0,_input->size());
     }
 };
 
@@ -483,22 +517,55 @@ int main() {
     //cout << "x0: " << x_grad[0] << " x1: " << x_grad[1] << " x2: " << x_grad[2] <<"\n";
     //
 
-    ADV_Vec x ("x",1);
-    ADV_Vec y ("y",1);
-    ADV_Vec z ("z",2);
+    //ADV_Vec x ("x",1);
+    //ADV_Vec y ("y",1);
+    //ADV_Vec z ("z",2);
 
-    ADV_Concat xy ({&x, &y});
-    ADV_InnerProduct in (xy,z);
+    //ADV_Concat xy ({&x, &y});
+    //ADV_InnerProduct in (xy,z);
 
-    double inner_product = in({ {"x",{3}}, {"y", {5}}, {"z",{7,9}}})[0];
+    //double inner_product = in({ {"x",{3}}, {"y", {5}}, {"z",{7,9}}})[0];
 
-    cout << in << " : " << inner_product << "\n";
-    in.take_gradient({1});
-    valarray<double> x_grad = z.get_gradient();
+    //cout << in << " : " << inner_product << "\n";
+    //in.take_gradient({1});
+    //valarray<double> x_grad = z.get_gradient();
 
-    cout << "del in / del x : " << x_grad[1] << "\n";
+    //cout << "del in / del x : " << x_grad[1] << "\n";
 
+    ADV_Vec x ("x", 3);
+    ADV_Vec y ("y", 3);
+    ADV_Sum xy (x, y);
+    ADV_Exp e (&xy);
+    ADV_VectorProduct op (x, e);
 
+    valarray<double> result = op({ {"x", {0,1,2}}, {"y", {3,4,5}}});
+    op.take_gradient({1,1,1});
+    valarray<double> grad = x.get_gradient();
+
+    for(auto i : result){
+        cout << "result " << i << "\n";
+    }
+    for(auto i : grad){
+        cout << "grad " << i << "\n";
+    }
+    //ADV_Vec x ("x",1);
+    //ADV_Vec y ("y",1);
+    //ADV_VectorProduct y2 (y, y);
+
+    //ADV_Sum xy (x, y2);
+    //ADV_Exp e (&x);
+
+    //ADV_VectorProduct op (xy, e);
+
+    //double result = op( { {"x", {0}}, {"y", {2}}})[0];
+
+    //op.take_gradient({1});
+
+    //double x_grad = x.get_gradient()[0];
+    //double y_grad = y.get_gradient()[0];
+
+    //cout << "del_x f (0,1): " << x_grad << "\n";
+    //cout << "del_y f (0,1): " << y_grad << "\n";
 
 
 
