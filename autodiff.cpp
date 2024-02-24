@@ -1,11 +1,14 @@
+module;
 #include <iostream>
 #include<valarray>
 #include<vector>
 #include<map>
 
+export module autodiff;
 using namespace std;
 
-struct ADV {
+
+export struct ADV {
     virtual void take_gradient(valarray<double> seed) = 0;
     virtual valarray<double>& get_gradient() = 0;
     virtual valarray<double>& operator()(map<string, valarray<double>> args) = 0;
@@ -18,11 +21,11 @@ struct ADV {
     string name;
 };
 
-ostream& operator<<(ostream& os, ADV& obj) {
+export ostream& operator<<(ostream& os, ADV& obj) {
     return obj.to_stream(os);
 }
 
-struct ADV_Vec : ADV {
+export struct ADV_Vec : ADV {
     valarray<double> grad;
     unsigned int vector_length;
 
@@ -63,7 +66,7 @@ struct ADV_Vec : ADV {
 
 };
 
-struct ADV_InnerProduct: ADV {
+export struct ADV_InnerProduct: ADV {
     valarray<double> grad;
     ADV& vec1;
     ADV& vec2;
@@ -126,7 +129,7 @@ struct ADV_InnerProduct: ADV {
 // I think that should do it!
 //
 
-struct ADV_Sum : ADV {
+export struct ADV_Sum : ADV {
     valarray<double> grad;
     ADV& vec1;
     ADV& vec2;
@@ -173,7 +176,7 @@ struct ADV_Sum : ADV {
     }
 };
 
-struct ADV_VectorProduct : ADV {
+export struct ADV_VectorProduct : ADV {
     valarray<double> grad;
     ADV& vec1;
     ADV& vec2;
@@ -220,7 +223,7 @@ struct ADV_VectorProduct : ADV {
     }
 };
 
-struct ADV_Concat : ADV {
+export struct ADV_Concat : ADV {
     vector<ADV*> members;
     valarray<double> grad;
 
@@ -269,7 +272,7 @@ struct ADV_Concat : ADV {
     }
 };
 
-struct ADV_Exp : ADV {
+export struct ADV_Exp : ADV {
     ADV* input;
     valarray<double> grad;
 
@@ -536,11 +539,18 @@ int main() {
     ADV_Vec y ("y", 3);
     ADV_Sum xy (x, y);
     ADV_Exp e (&xy);
-    ADV_VectorProduct op (x, e);
+    ADV_VectorProduct xexp (x, e);
+    ADV_InnerProduct xexp2 (xexp, xexp);
 
-    valarray<double> result = op({ {"x", {0,1,2}}, {"y", {3,4,5}}});
+    ADV_Vec z ("z", 1);
+    ADV_Exp ze (&z);
+
+    ADV_Concat cc ({ &ze, &xexp2 });
+    ADV_InnerProduct op (cc, cc);
+
+    valarray<double> result = op({ {"x", {0,1,2}}, {"y", {3,4,5}}, {"z", {117}}} );
     op.take_gradient({1,1,1});
-    valarray<double> grad = x.get_gradient();
+    valarray<double> grad = z.get_gradient();
 
     for(auto i : result){
         cout << "result " << i << "\n";
