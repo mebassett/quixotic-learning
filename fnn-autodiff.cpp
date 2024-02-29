@@ -38,9 +38,32 @@ void initialize_weights(Weights& w) {
     }
 }
 
-ADV get_predict(Weights& w) {
-     
+ADV* get_predict(Weights& w, ADV_Vec& input) {
+
+    vector<ADV*> intermediates (NUM_HIDDEN_NODES);
+
+    for(int i {0}; i<NUM_HIDDEN_NODES;i++){
+        ADV_InnerProduct ip (input, *w.at(make_pair(0,i)));
+        ADV_LeakyReLU relu (&ip);
+        intermediates[i] = &relu;
+    }
+
+    ADV_Concat hidden_nodes ( intermediates );
+
+    vector<ADV*> finals (OUTPUT_SIZE);
+
+    for(int i {0}; i<OUTPUT_SIZE;i++) {
+        ADV_InnerProduct ip (hidden_nodes, *w.at(make_pair(1,i)));
+        finals[i] = &ip;
+    }
+
+    ADV_Concat* ret = new ADV_Concat (finals);
+    return ret;
   
+}
+
+ADV* get_error(ADV* f, Weights& w, ADV_Vec& x, ADV_Vec& y) {
+    
 }
 
 
