@@ -309,6 +309,43 @@ export struct ADV_Exp : ADV {
     }
 };
 
+export struct ADV_Negate : ADV {
+    ADV* input;
+    valarray<double> grad;
+
+    void take_gradient(valarray<double> seed) {
+        this->input->take_gradient(-1 * seed) ;
+    }
+
+    valarray<double>& get_gradient() {
+        return this->grad;
+    }
+
+    valarray<double>& operator()() {
+        this->val = - (*this->input)();
+        return this->val;
+    }
+    valarray<double>& operator()(map<string, valarray<double>> args) {
+        for(auto [name, value] : args)
+            this->deps.at(name)->setValue(value);
+        return (*this)();
+    }
+    void setValue(valarray<double> _val) {}
+    const unsigned int size() {
+        return this->input->size();
+    }
+    ostream& to_stream(ostream& os) {
+        return os << this->name;
+    }
+
+    ADV_Exp(ADV* _input): input(_input) {
+        // should have a check to ensure they are all size 1...
+        this->deps = _input->deps;
+        this->name = "ADVNegate of " + _input->name;
+        this->grad = valarray<double>((double)0,_input->size());
+    }
+};
+
 export struct ADV_LeakyReLU : ADV {
     ADV* input;
     valarray<double> grad;
