@@ -338,7 +338,7 @@ export struct ADV_Negate : ADV {
         return os << this->name;
     }
 
-    ADV_Exp(ADV* _input): input(_input) {
+    ADV_Negate(ADV* _input): input(_input) {
         // should have a check to ensure they are all size 1...
         this->deps = _input->deps;
         this->name = "ADVNegate of " + _input->name;
@@ -567,118 +567,128 @@ AD_Mul operator*(AD& plier, AD& plicand) {
 }
 
 
-//int main() {
-//    //AD_Variable x ("x");
-//    //AD_Variable y ("y");
-//
-//    //AD_Plus d_ = x + y;
-//    //AD_Variable z ("z");
-//
-//
-//
-//
-//    //AD_Mul d = d_ * z ;
-//    //cout << "hello, world!\n" << d({{"x", 5.0}, {"y", 9.0}, {"z", 2.0}}) << "\n";
-//
-//    //map<string, double> grad = d.grad();
-//
-//    //cout << "x partial " << x.get_gradient() << "\n";
-//
-//    //for(const auto& [varname, partial] : grad) 
-//    //    cout << "(del f/del " << varname << ") = " << partial << "\n";
-//    //
-//    //ADV_Vec x ("x",3);
-//
-//    //ADV_Vec y {"y",3};
-//
-//    //ADV_InnerProduct z (x, x);
-//
-//    //double inner_product = z({ {"x", {1,2,3}}})[0];
-//
-//    //cout << z << " : " << inner_product << "\n";
-//
-//
-//    //z.take_gradient({1});
-//
-//    //valarray<double> x_grad = x.get_gradient();
-//    //cout << "x0: " << x_grad[0] << " x1: " << x_grad[1] << " x2: " << x_grad[2] <<"\n";
-//    //
-//
-//    //ADV_Vec x ("x",1);
-//    //ADV_Vec y ("y",1);
-//    //ADV_Vec z ("z",2);
-//
-//    //ADV_Concat xy ({&x, &y});
-//    //ADV_InnerProduct in (xy,z);
-//
-//    //double inner_product = in({ {"x",{3}}, {"y", {5}}, {"z",{7,9}}})[0];
-//
-//    //cout << in << " : " << inner_product << "\n";
-//    //in.take_gradient({1});
-//    //valarray<double> x_grad = z.get_gradient();
-//
-//    //cout << "del in / del x : " << x_grad[1] << "\n";
-//
-//    //ADV_Vec x ("x", 3);
-//    //ADV_Vec y ("y", 3);
-//    //ADV_Sum xy (x, y);
-//    //ADV_Exp e (&xy);
-//    //ADV_VectorProduct xexp (x, e);
-//    //ADV_InnerProduct xexp2 (xexp, xexp);
-//
-//    //ADV_Vec z ("z", 1);
-//    //ADV_Exp ze (&z);
-//
-//    //ADV_Concat cc ({ &ze, &xexp2 });
-//    //ADV_InnerProduct op (cc, cc);
-//
-//    //valarray<double> result = op({ {"x", {0,1,2}}, {"y", {3,4,5}}, {"z", {117}}} );
-//    //op.take_gradient({1,1,1});
-//    //valarray<double> grad = z.get_gradient();
-//
-//    //for(auto i : result){
-//    //    cout << "result " << i << "\n";
-//    //}
-//    //for(auto i : grad){
-//    //    cout << "grad " << i << "\n";
-//    //}
-//    //ADV_Vec x ("x",1);
-//    //ADV_Vec y ("y",1);
-//    //ADV_VectorProduct y2 (y, y);
-//
-//    //ADV_Sum xy (x, y2);
-//    //ADV_Exp e (&x);
-//
-//    //ADV_VectorProduct op (xy, e);
-//
-//    //double result = op( { {"x", {0}}, {"y", {2}}})[0];
-//
-//    //op.take_gradient({1});
-//
-//    //double x_grad = x.get_gradient()[0];
-//    //double y_grad = y.get_gradient()[0];
-//
-//    //cout << "del_x f (0,1): " << x_grad << "\n";
-//    //cout << "del_y f (0,1): " << y_grad << "\n";
-//
-//    ADV_Vec x ("x", 1);
-//    ADV_Vec y ("y", 1);
-//    ADV_InnerProduct in (x, y);
-//    ADV_LeakyReLU op (&in);
-//
-//    double result = op ({ {"x", {2}}, {"y", {-1}}})[0];
-//
-//    cout << "f(x,y) = ReLU(xy), f(2,-1): " << result << "\n";
-//    op.take_gradient({1});
-//
-//    double x_grad = x.get_gradient()[0];
-//    double y_grad = y.get_gradient()[0];
-//
-//    cout << "del_x f (2,-1): " << x_grad << "\n";
-//    cout << "del_y f (2,-1)): " << y_grad << "\n";
-//
-//
-//
-//
-//    return 0;
-//}
+int main() {
+    //AD_Variable x ("x");
+    //AD_Variable y ("y");
+
+    //AD_Plus d_ = x + y;
+    //AD_Variable z ("z");
+
+
+
+
+    //AD_Mul d = d_ * z ;
+    //cout << "hello, world!\n" << d({{"x", 5.0}, {"y", 9.0}, {"z", 2.0}}) << "\n";
+
+    //map<string, double> grad = d.grad();
+
+    //cout << "x partial " << x.get_gradient() << "\n";
+
+    //for(const auto& [varname, partial] : grad) 
+    //    cout << "(del f/del " << varname << ") = " << partial << "\n";
+    //
+    //ADV_Vec x ("x",3);
+
+    //ADV_Vec y {"y",3};
+
+    //ADV_InnerProduct z (x, x);
+
+    //double inner_product = z({ {"x", {1,2,3}}})[0];
+
+    //cout << z << " : " << inner_product << "\n";
+
+
+    //z.take_gradient({1});
+
+    //valarray<double> x_grad = x.get_gradient();
+    //cout << "x0: " << x_grad[0] << " x1: " << x_grad[1] << " x2: " << x_grad[2] <<"\n";
+    //
+
+    //ADV_Vec x ("x",1);
+    //ADV_Vec y ("y",1);
+    //ADV_Vec z ("z",2);
+
+    //ADV_Concat xy ({&x, &y});
+    //ADV_InnerProduct in (xy,z);
+
+    //double inner_product = in({ {"x",{3}}, {"y", {5}}, {"z",{7,9}}})[0];
+
+    //cout << in << " : " << inner_product << "\n";
+    //in.take_gradient({1});
+    //valarray<double> x_grad = z.get_gradient();
+
+    //cout << "del in / del x : " << x_grad[1] << "\n";
+
+    //ADV_Vec x ("x", 3);
+    //ADV_Vec y ("y", 3);
+    //ADV_Sum xy (x, y);
+    //ADV_Exp e (&xy);
+    //ADV_VectorProduct xexp (x, e);
+    //ADV_InnerProduct xexp2 (xexp, xexp);
+
+    //ADV_Vec z ("z", 1);
+    //ADV_Exp ze (&z);
+
+    //ADV_Concat cc ({ &ze, &xexp2 });
+    //ADV_InnerProduct op (cc, cc);
+
+    //valarray<double> result = op({ {"x", {0,1,2}}, {"y", {3,4,5}}, {"z", {117}}} );
+    //op.take_gradient({1,1,1});
+    //valarray<double> grad = z.get_gradient();
+
+    //for(auto i : result){
+    //    cout << "result " << i << "\n";
+    //}
+    //for(auto i : grad){
+    //    cout << "grad " << i << "\n";
+    //}
+    //ADV_Vec x ("x",1);
+    //ADV_Vec y ("y",1);
+    //ADV_VectorProduct y2 (y, y);
+
+    //ADV_Sum xy (x, y2);
+    //ADV_Exp e (&x);
+
+    //ADV_VectorProduct op (xy, e);
+
+    //double result = op( { {"x", {0}}, {"y", {2}}})[0];
+
+    //op.take_gradient({1});
+
+    //double x_grad = x.get_gradient()[0];
+    //double y_grad = y.get_gradient()[0];
+
+    //cout << "del_x f (0,1): " << x_grad << "\n";
+    //cout << "del_y f (0,1): " << y_grad << "\n";
+
+    //ADV_Vec x ("x", 1);
+    //ADV_Vec y ("y", 1);
+    //ADV_InnerProduct in (x, y);
+    //ADV_LeakyReLU op (&in);
+
+    //double result = op ({ {"x", {2}}, {"y", {-1}}})[0];
+
+    //cout << "f(x,y) = ReLU(xy), f(2,-1): " << result << "\n";
+    //op.take_gradient({1});
+
+    //double x_grad = x.get_gradient()[0];
+    //double y_grad = y.get_gradient()[0];
+
+    //cout << "del_x f (2,-1): " << x_grad << "\n";
+    //cout << "del_y f (2,-1)): " << y_grad << "\n";
+    //
+    ADV_Vec x ("x", 2);
+    ADV_Vec y ("y", 2);
+    ADV_Negate nx (&x);
+    ADV_Sum f (y,nx);
+
+    valarray<double> result = f({ {"x", {3,4}}, {"y", {3,4}}});
+
+    cout << "result[0] = " << result[0] << "\n";
+    cout << "result[1] = " << result[1] << "\n";
+
+
+
+
+    return 0;
+}
