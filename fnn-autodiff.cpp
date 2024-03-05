@@ -4,6 +4,7 @@
 #include<utility>
 #include<random>
 import autodiff;
+import mnistdata;
     
 using namespace std;
 const unsigned int INPUT_SIZE = 784;
@@ -62,8 +63,12 @@ ADV* get_predict(Weights& w, ADV_Vec& input) {
   
 }
 
-ADV* get_error(ADV* f, Weights& w, ADV_Vec& x, ADV_Vec& y) {
-    
+ADV* get_error(ADV* f, Weights& w, ADV_Vec& y) {
+    ADV_Negate noutput (&y);
+    ADV_Sum sum (*f, y);
+    ADV_InnerProduct* err = new ADV_InnerProduct (sum, sum);
+    return err;
+        
 }
 
 
