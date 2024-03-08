@@ -110,12 +110,12 @@ export struct ADV_InnerProduct: ADV {
     }
 
     ADV_InnerProduct(ADV& _v1, ADV& _v2): vec1(_v1), vec2(_v2) {
+      this->name = "ADVInnerProduct of " + _v1.name + " and " + _v2.name;
       //need to check that their sizes are equal.
-      if(_v1.size() != _v2.size()) throw out_of_range("ADVInnerProduct: vectors are not the same size.");
+      if(_v1.size() != _v2.size()) throw out_of_range("ADVInnerProduct ("+ this->name +"): vectors are not the same size.");
       this->deps = {};
       this->deps.merge(_v1.deps);
       this->deps.merge(_v2.deps);
-      this->name = "ADVInnerProduct of " + _v1.name + " and " + _v2.name;
     }
 
 
