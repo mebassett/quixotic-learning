@@ -130,12 +130,12 @@ export struct ADV_InnerProduct: ADV {
 
 export struct ADV_Sum : ADV {
     valarray<double> grad;
-    ADV& vec1;
-    ADV& vec2;
+    ADV* vec1;
+    ADV* vec2;
     void take_gradient(valarray<double> seed) {
         this->grad += seed;
-        this->vec1.take_gradient(seed);
-        this->vec2.take_gradient(seed);
+        this->vec1->take_gradient(seed);
+        this->vec2->take_gradient(seed);
     }
 
     valarray<double>& get_gradient() {
@@ -143,34 +143,35 @@ export struct ADV_Sum : ADV {
     }
 
     valarray<double>& operator()() {
-        this->val = this->vec1() + this->vec2();
+        this->val = (*this->vec1)() + (*this->vec2)();
         return this->val;
     }
 
     valarray<double>& operator()(map<string, valarray<double>> args) {
-        for(auto [name, value] : args)
+        for(auto [name, value] : args){
             this->deps.at(name)->setValue(value);
+        }
         return (*this)();
     }
 
     void setValue(valarray<double> _val) {}
 
     const unsigned int size() {
-        return this->vec1.size();
+        return this->vec1->size();
     }
 
     ostream& to_stream(ostream& os) {
         return os << this->name;
     }
 
-    ADV_Sum(ADV& _v1, ADV& _v2): vec1(_v1), vec2(_v2) {
-        if(_v1.size() != _v2.size()) 
+    ADV_Sum(ADV* _v1, ADV* _v2): vec1(_v1), vec2(_v2) {
+        if(_v1->size() != _v2->size()) 
             throw out_of_range("ADVSum: vectors are not the same size");
         this->deps = {};
-        this->deps.merge(_v1.deps);
-        this->deps.merge(_v2.deps);
-        this->name = "ADVSum of " + _v1.name + " and " + _v2.name;
-        this->grad = valarray<double>((double)0,_v1.size());
+        this->deps.merge(_v1->deps);
+        this->deps.merge(_v2->deps);
+        this->name = "ADVSum of " + _v1->name + " and " + _v2->name;
+        this->grad = valarray<double>((double)0,_v1->size());
 
     }
 };
@@ -247,8 +248,10 @@ export struct ADV_Concat : ADV {
         return this->val;
     }
     valarray<double>& operator()(map<string, valarray<double>> args) {
-        for(auto [name, value] : args)
+        for(auto [name, value] : args){
+            cout << " looking for " << name << "\n";
             this->deps.at(name)->setValue(value);
+        }
         return (*this)();
     }
     void setValue(valarray<double> _val) {}
