@@ -68,15 +68,14 @@ export struct ADV_Vec : ADV {
 
 export struct ADV_InnerProduct: ADV {
     valarray<double> grad;
-    ADV& vec1;
-    ADV& vec2;
+    ADV* vec1;
+    ADV* vec2;
 
     unsigned int input_size;
     void take_gradient(valarray<double> seed) {
 
-        //seed.size() == this->size(), id est 1
-        this->vec1.take_gradient(seed * this->vec2());
-        this->vec2.take_gradient(seed * this->vec1());
+        this->vec1->take_gradient(seed * this->vec2->val);
+        this->vec2->take_gradient(seed * this->vec1->val);
     }
 
     valarray<double>& get_gradient() {
@@ -84,8 +83,8 @@ export struct ADV_InnerProduct: ADV {
     }
 
     valarray<double>& operator()() {
-        valarray<double> v1 = this->vec1(); 
-        valarray<double> v2 = this->vec2(); 
+        valarray<double> v1 = (*this->vec1)(); 
+        valarray<double> v2 = (*this->vec2)(); 
 
         this->val = { (v1 * v2).sum() };
         return this->val;
@@ -104,18 +103,18 @@ export struct ADV_InnerProduct: ADV {
     }
 
     ostream& to_stream(ostream& os) {
-        return os << " ADV InnerProduct of " << this->vec1.name << " @ " 
-                  << &(this->vec1) << " and " << this->vec2.name << " @ "
+        return os << " ADV InnerProduct of " << this->vec1->name << " @ " 
+                  << &(this->vec1) << " and " << this->vec2->name << " @ "
                   << &(this->vec2) << "\n";
     }
 
-    ADV_InnerProduct(ADV& _v1, ADV& _v2): vec1(_v1), vec2(_v2) {
-      this->name = "ADVInnerProduct of " + _v1.name + " and " + _v2.name;
+    ADV_InnerProduct(ADV* _v1, ADV* _v2): vec1(_v1), vec2(_v2) {
+      this->name = "ADVInnerProduct of " + _v1->name + " and " + _v2->name;
       //need to check that their sizes are equal.
-      if(_v1.size() != _v2.size()) throw out_of_range("ADVInnerProduct ("+ this->name +"): vectors are not the same size.");
+      if(_v1->size() != _v2->size()) throw out_of_range("ADVInnerProduct ("+ this->name +"): vectors are not the same size.");
       this->deps = {};
-      this->deps.merge(_v1.deps);
-      this->deps.merge(_v2.deps);
+      this->deps.merge(_v1->deps);
+      this->deps.merge(_v2->deps);
     }
 
 
