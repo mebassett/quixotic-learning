@@ -46,7 +46,7 @@ ADV* get_predictor(Weights& w, ADV_Vec& input) {
 
     for(int i {0}; i<NUM_HIDDEN_NODES;i++){
         ADV* v = w.at(make_pair(0,i));
-        ADV_InnerProduct* ip = new ADV_InnerProduct (input, *v);
+        ADV_InnerProduct* ip = new ADV_InnerProduct (&input, v);
         ADV_LeakyReLU* relu  = new ADV_LeakyReLU (ip);
         intermediates[i] = relu;
     }
@@ -58,7 +58,7 @@ ADV* get_predictor(Weights& w, ADV_Vec& input) {
     vector<ADV*> finals (OUTPUT_SIZE);
 
     for(int i {0}; i<OUTPUT_SIZE;i++) {
-        ADV_InnerProduct* ip = new ADV_InnerProduct(*hidden_nodes, *w.at(make_pair(1,i)));
+        ADV_InnerProduct* ip = new ADV_InnerProduct(hidden_nodes, w.at(make_pair(1,i)));
         finals[i] = ip;
     }
     cout << "done with finals ...\n";
@@ -69,10 +69,10 @@ ADV* get_predictor(Weights& w, ADV_Vec& input) {
   
 }
 
-ADV* get_error(ADV* f, Weights& w, ADV_Vec& y) {
-    ADV_Negate* noutput =new ADV_Negate(&y);
-    ADV_Sum* sum = new ADV_Sum(*f, y);
-    ADV_InnerProduct* err = new ADV_InnerProduct (&sum, &sum);
+ADV* get_error(ADV* f, Weights& w, ADV_Vec* y) {
+    ADV_Negate* noutput =new ADV_Negate(y);
+    ADV_Sum* sum = new ADV_Sum(f, y);
+    ADV_InnerProduct* err = new ADV_InnerProduct (sum, sum);
     return err;
         
 }
@@ -94,11 +94,13 @@ int main() {
     cout <<"calling predictor...\n";
     ADV* predictor = get_predictor(weights, input);
     cout << "calling error\n";
-    ADV* error = get_error(predictor, weights, target);
+    ADV* error = get_error(predictor, weights, &target);
+    cout << "using predictor...\n";
 
-    double y = (*predictor)({ {"input", {0,0,0}}})[0];
+    double y = (*predictor)({ {"input", {1,1,1}}})[0];
 
     cout << "y value is : " << y << "\n";
+
 
     //ADV* v = weights.at(make_pair(0,3));
     //
