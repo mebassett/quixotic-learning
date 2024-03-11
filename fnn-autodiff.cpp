@@ -93,11 +93,17 @@ int main() {
     ADV_Vec target ("target",OUTPUT_SIZE);
     cout <<"calling predictor...\n";
     ADV* predictor = get_predictor(weights, input);
-    cout << "calling error\n";
-    ADV* error = get_error(predictor, weights, &target);
     cout << "using predictor...\n";
 
     double y = (*predictor)({ {"input", {1,1,1}}})[0];
+
+    cout << "y value is : " << y << "\n";
+
+    cout << "calling error\n";
+    ADV* error = get_error(predictor, weights, &target);
+
+    cout << "using predictor again...";
+    y = (*predictor)({ {"input", {0,0,1}}})[0];
 
     cout << "y value is : " << y << "\n";
 

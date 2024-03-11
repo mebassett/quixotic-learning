@@ -112,9 +112,8 @@ export struct ADV_InnerProduct: ADV {
       this->name = "ADVInnerProduct of " + _v1->name + " and " + _v2->name;
       //need to check that their sizes are equal.
       if(_v1->size() != _v2->size()) throw out_of_range("ADVInnerProduct ("+ this->name +"): vectors are not the same size.");
-      this->deps = {};
-      this->deps.merge(_v1->deps);
-      this->deps.merge(_v2->deps);
+      this->deps = map<string, ADV*>(_v1->deps);
+      this->deps.insert(_v2->deps.begin(), _v2->deps.end());
     }
 
 
@@ -167,9 +166,8 @@ export struct ADV_Sum : ADV {
     ADV_Sum(ADV* _v1, ADV* _v2): vec1(_v1), vec2(_v2) {
         if(_v1->size() != _v2->size()) 
             throw out_of_range("ADVSum: vectors are not the same size");
-        this->deps = {};
-        this->deps.merge(_v1->deps);
-        this->deps.merge(_v2->deps);
+        this->deps = map<string, ADV*>(_v1->deps);
+        this->deps.insert(_v2->deps.begin(), _v2->deps.end());
         this->name = "ADVSum of " + _v1->name + " and " + _v2->name;
         this->grad = valarray<double>((double)0,_v1->size());
 
@@ -178,12 +176,12 @@ export struct ADV_Sum : ADV {
 
 export struct ADV_VectorProduct : ADV {
     valarray<double> grad;
-    ADV& vec1;
-    ADV& vec2;
+    ADV* vec1;
+    ADV* vec2;
     void take_gradient(valarray<double> seed) {
         this->grad += seed;
-        this->vec1.take_gradient(seed * this->vec2());
-        this->vec2.take_gradient(seed * this->vec1());
+        this->vec1->take_gradient(seed * this->vec2->val);
+        this->vec2->take_gradient(seed * this->vec1->val);
     }
 
     valarray<double>& get_gradient() {
@@ -191,7 +189,7 @@ export struct ADV_VectorProduct : ADV {
     }
 
     valarray<double>& operator()() {
-        this->val = this->vec1() * this->vec2();
+        this->val = (*this->vec1)() * (*this->vec2)();
         return this->val;
     }
 
@@ -204,21 +202,20 @@ export struct ADV_VectorProduct : ADV {
     void setValue(valarray<double> _val) {}
 
     const unsigned int size() {
-        return this->vec1.size();
+        return this->vec1->size();
     }
 
     ostream& to_stream(ostream& os) {
         return os << this->name;
     }
 
-    ADV_VectorProduct(ADV& _v1, ADV& _v2): vec1(_v1), vec2(_v2) {
-        if(_v1.size() != _v2.size()) 
+    ADV_VectorProduct(ADV* _v1, ADV* _v2): vec1(_v1), vec2(_v2) {
+        if(_v1->size() != _v2->size()) 
             throw out_of_range("ADVSum: vectors are not the same size");
-        this->deps = {};
-        this->deps.merge(_v1.deps);
-        this->deps.merge(_v2.deps);
-        this->name = "ADVSum of " + _v1.name + " and " + _v2.name;
-        this->grad = valarray<double>((double)0,_v1.size());
+        this->deps = map<string, ADV*>(_v1->deps);
+        this->deps.insert(_v2->deps.begin(), _v2->deps.end());
+        this->name = "ADVSum of " + _v1->name + " and " + _v2->name;
+        this->grad = valarray<double>((double)0,_v1->size());
 
     }
 };
@@ -248,6 +245,8 @@ export struct ADV_Concat : ADV {
         return this->val;
     }
     valarray<double>& operator()(map<string, valarray<double>> args) {
+        cout << this->name << " has been called.\n";
+        cout << "size of deps: " << this->deps.size() << "\n";
         for(auto [name, value] : args){
             cout << " looking for " << name << "\n";
             this->deps.at(name)->setValue(value);
@@ -267,7 +266,7 @@ export struct ADV_Concat : ADV {
         this->deps = {};
         this->name = "ADVConcat of ";
         for (auto m : _members) {
-            this->deps.merge(m->deps);
+            this->deps.insert(m->deps.begin(), m->deps.end());
             this->name += m->name + " ";
         }
         this->grad = valarray<double>((double)0,_members.size());
@@ -305,7 +304,7 @@ export struct ADV_Exp : ADV {
 
     ADV_Exp(ADV* _input): input(_input) {
         // should have a check to ensure they are all size 1...
-        this->deps = _input->deps;
+        this->deps = map<string, ADV*>( _input->deps);
         this->name = "ADVExp of " + _input->name;
         this->grad = valarray<double>((double)0,_input->size());
     }
@@ -342,7 +341,7 @@ export struct ADV_Negate : ADV {
 
     ADV_Negate(ADV* _input): input(_input) {
         // should have a check to ensure they are all size 1...
-        this->deps = _input->deps;
+        this->deps = map<string, ADV*>(_input->deps);
         this->name = "ADVNegate of " + _input->name;
         this->grad = valarray<double>((double)0,_input->size());
     }
@@ -388,7 +387,7 @@ export struct ADV_LeakyReLU : ADV {
 
     ADV_LeakyReLU(ADV* _input): input(_input) {
         // should have a check to ensure they are all size 1...
-        this->deps = _input->deps;
+        this->deps = map<string, ADV*>(_input->deps);
         this->name = "ADVLeakyReLU of " + _input->name;
         this->grad = valarray<double>((double)0,_input->size());
         this->val = valarray<double>((double)0,_input->size());
