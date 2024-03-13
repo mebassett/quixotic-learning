@@ -245,10 +245,7 @@ export struct ADV_Concat : ADV {
         return this->val;
     }
     valarray<double>& operator()(map<string, valarray<double>> args) {
-        cout << this->name << " has been called.\n";
-        cout << "size of deps: " << this->deps.size() << "\n";
         for(auto [name, value] : args){
-            cout << " looking for " << name << "\n";
             this->deps.at(name)->setValue(value);
         }
         return (*this)();
