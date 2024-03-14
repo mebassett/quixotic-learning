@@ -19,6 +19,10 @@ export struct ADV {
     map<string, ADV*> deps;
     valarray<double> val;
     string name;
+    valarray<double> grad;
+    void reset_gradient() {
+        this->grad = valarray<double>((double) 0, this->size());
+    }
 };
 
 export ostream& operator<<(ostream& os, ADV& obj) {
@@ -26,8 +30,8 @@ export ostream& operator<<(ostream& os, ADV& obj) {
 }
 
 export struct ADV_Vec : ADV {
-    valarray<double> grad;
     unsigned int vector_length;
+
 
     void take_gradient(valarray<double> seed) {
        this->grad += seed; 
@@ -37,6 +41,7 @@ export struct ADV_Vec : ADV {
         return this->grad;
     }
     valarray<double>& operator()() {
+        this->grad = valarray<double>((double) 0, this->size());
         return this->val;
     }
     valarray<double>& operator()(map<string, valarray<double>> args) {
@@ -67,7 +72,6 @@ export struct ADV_Vec : ADV {
 };
 
 export struct ADV_InnerProduct: ADV {
-    valarray<double> grad;
     ADV* vec1;
     ADV* vec2;
 
@@ -83,6 +87,8 @@ export struct ADV_InnerProduct: ADV {
     }
 
     valarray<double>& operator()() {
+        this->vec1->reset_gradient();
+        this->vec2->reset_gradient();
         valarray<double> v1 = (*this->vec1)(); 
         valarray<double> v2 = (*this->vec2)(); 
 
@@ -128,7 +134,6 @@ export struct ADV_InnerProduct: ADV {
 //
 
 export struct ADV_Sum : ADV {
-    valarray<double> grad;
     ADV* vec1;
     ADV* vec2;
     void take_gradient(valarray<double> seed) {
@@ -142,6 +147,8 @@ export struct ADV_Sum : ADV {
     }
 
     valarray<double>& operator()() {
+        this->vec1->reset_gradient();
+        this->vec2->reset_gradient();
         this->val = (*this->vec1)() + (*this->vec2)();
         return this->val;
     }
@@ -175,7 +182,6 @@ export struct ADV_Sum : ADV {
 };
 
 export struct ADV_VectorProduct : ADV {
-    valarray<double> grad;
     ADV* vec1;
     ADV* vec2;
     void take_gradient(valarray<double> seed) {
@@ -189,6 +195,8 @@ export struct ADV_VectorProduct : ADV {
     }
 
     valarray<double>& operator()() {
+        this->vec1->reset_gradient();
+        this->vec2->reset_gradient();
         this->val = (*this->vec1)() * (*this->vec2)();
         return this->val;
     }
@@ -222,7 +230,6 @@ export struct ADV_VectorProduct : ADV {
 
 export struct ADV_Concat : ADV {
     vector<ADV*> members;
-    valarray<double> grad;
 
     void take_gradient(valarray<double> seed) {
         // seed.size == sum(member => member.sizer() for member in members
@@ -240,6 +247,7 @@ export struct ADV_Concat : ADV {
     valarray<double>& operator()() {
         this->val = valarray<double>(this->members.size());
         for(int i {0}; i<this->members.size();i++){
+            this->members[i]->reset_gradient();
             this->val[i] = (*this->members[i])()[0];
         }
         return this->val;
@@ -272,7 +280,6 @@ export struct ADV_Concat : ADV {
 
 export struct ADV_Exp : ADV {
     ADV* input;
-    valarray<double> grad;
 
     void take_gradient(valarray<double> seed) {
         this->input->take_gradient(this->val * seed) ;
@@ -283,6 +290,7 @@ export struct ADV_Exp : ADV {
     }
 
     valarray<double>& operator()() {
+        this->input->reset_gradient();
         this->val= exp((*this->input)());
         return this->val;
     }
@@ -309,7 +317,6 @@ export struct ADV_Exp : ADV {
 
 export struct ADV_Negate : ADV {
     ADV* input;
-    valarray<double> grad;
 
     void take_gradient(valarray<double> seed) {
         this->input->take_gradient(-1 * seed) ;
@@ -320,6 +327,7 @@ export struct ADV_Negate : ADV {
     }
 
     valarray<double>& operator()() {
+        this->input->reset_gradient();
         this->val = - (*this->input)();
         return this->val;
     }
@@ -346,7 +354,6 @@ export struct ADV_Negate : ADV {
 
 export struct ADV_LeakyReLU : ADV {
     ADV* input;
-    valarray<double> grad;
 
     void take_gradient(valarray<double> seed) {
         this->input->take_gradient(this->grad * seed) ;
@@ -357,6 +364,7 @@ export struct ADV_LeakyReLU : ADV {
     }
 
     valarray<double>& operator()() {
+        this->input->reset_gradient();
         valarray<double> ret = (*this->input)();
         for(int i {0}; i< ret.size(); i++) 
             if(ret[i] <= 0) {

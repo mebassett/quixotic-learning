@@ -9,10 +9,19 @@ import mnistdata;
     
 using namespace std;
 const unsigned int INPUT_SIZE = 2;//784;
-const unsigned int NUM_HIDDEN_NODES= 5;//300;
+const unsigned int NUM_HIDDEN_NODES= 4;//300;
 const unsigned int OUTPUT_SIZE = 1;//10;
 
 typedef map<pair<int,int>, ADV*> Weights;
+
+ostream& operator<<(ostream& os, valarray<double>& vec){
+    os << "{ ";
+    for(int i {0};i<vec.size();i++) {
+        os << vec[i] << ", ";
+    }
+    os << " }\n";
+    return os;
+}
 
 valarray<double> random_array(unsigned int size, double lower_bound, double upper_bound) {
     valarray<double> ret (size);
@@ -29,8 +38,8 @@ valarray<double> random_array(unsigned int size, double lower_bound, double uppe
 void initialize_weights(Weights& w) {
 
     for(int i {0}; i< NUM_HIDDEN_NODES; i++) {
-        ADV_Vec* v = new ADV_Vec ("weights0-"+to_string(i), INPUT_SIZE+1);
-        v->setValue(random_array(INPUT_SIZE+1, -0.05, 0.05));
+        ADV_Vec* v = new ADV_Vec ("weights0-"+to_string(i), INPUT_SIZE);
+        v->setValue(random_array(INPUT_SIZE, -0.05, 0.05));
         w.insert({make_pair(0,i), v});
     }
     for(int i {0}; i< OUTPUT_SIZE; i++) {
@@ -66,8 +75,8 @@ ADV* get_predictor(Weights& w, ADV_Vec& input) {
 }
 
 ADV* get_error(ADV* f, Weights& w, ADV_Vec* y) {
-    ADV_Negate* noutput =new ADV_Negate(y);
-    ADV_Sum* sum = new ADV_Sum(f, y);
+    ADV_Negate* noutput =new ADV_Negate(f);
+    ADV_Sum* sum = new ADV_Sum(y, f);
     ADV_InnerProduct* err = new ADV_InnerProduct (sum, sum);
     return err;
         
@@ -78,9 +87,9 @@ int main() {
     Weights weights {};
     initialize_weights(weights);
 
-    vector<valarray<double>> xs = {{1,1,1},{0,0,1},{0,1,1},{1,0,1}};
+    vector<valarray<double>> xs = {{1,1},{0,0},{0,1},{1,0}};
     vector<valarray<double>> ys = {{0}, {0}, {1}, {1}};
-    double learning_rate = 0.01;
+    double learning_rate = 0.1;
 
     for( auto [p,_v]: weights) {
         ADV* v = weights.at(p);
@@ -89,7 +98,7 @@ int main() {
     }
 
 
-    ADV_Vec input ("input",INPUT_SIZE+1);
+    ADV_Vec input ("input",INPUT_SIZE);
     ADV_Vec target ("target",OUTPUT_SIZE);
     ADV* predictor = get_predictor(weights, input);
     ADV* error = get_error(predictor, weights, &target);
@@ -111,12 +120,14 @@ int main() {
             for(auto [coords, adv] : weights){ 
                 valarray<double> gradient = adv->get_gradient();
                 valarray<double> new_val = adv->val - (learning_rate * gradient);
-                adv->setValue(new_val);
                 cout << "gradient for (" << coords.first << "," << coords.second  << ") "
-                     << adv->val[1] << " " 
-                     << gradient[1] << " "
-                     << new_val[1] << " "
+                     << gradient
+                     << " and old val for weights "
+                     << adv->val
+                     << " and new val for weights "
+                     << new_val
                      << "\n";
+                adv->setValue(new_val);
             }
         }
         cout << "done!\n";
