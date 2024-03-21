@@ -8,9 +8,9 @@ import autodiff;
 import mnistdata;
     
 using namespace std;
-const unsigned int INPUT_SIZE = 2;//784;
-const unsigned int NUM_HIDDEN_NODES= 4;//300;
-const unsigned int OUTPUT_SIZE = 1;//10;
+const unsigned int INPUT_SIZE = 784;
+const unsigned int NUM_HIDDEN_NODES= 500;
+const unsigned int OUTPUT_SIZE = 10;
 
 typedef map<pair<int,int>, ADV*> Weights;
 
@@ -38,24 +38,24 @@ valarray<double> random_array(unsigned int size, double lower_bound, double uppe
 void initialize_weights(Weights& w) {
 
     for(int i {0}; i< NUM_HIDDEN_NODES; i++) {
-        ADV_Vec* v = new ADV_Vec ("weights0-"+to_string(i), INPUT_SIZE);
-        v->setValue(random_array(INPUT_SIZE, -0.05, 0.05));
+        ADV_Vec* v = new ADV_Vec ("weights0-"+to_string(i), INPUT_SIZE+1);
+        v->setValue(random_array(INPUT_SIZE+1, -0.05, 0.05));
         w.insert({make_pair(0,i), v});
     }
     for(int i {0}; i< OUTPUT_SIZE; i++) {
-        ADV_Vec* v = new ADV_Vec ("weights1-"+i, NUM_HIDDEN_NODES);
+        ADV_Vec* v = new ADV_Vec ("weights1-"+to_string(i), NUM_HIDDEN_NODES);
         v->setValue(random_array(NUM_HIDDEN_NODES, -0.05, 0.05));
         w.insert({make_pair(1,i), v});
     }
 }
 
-ADV* get_predictor(Weights& w, ADV_Vec& input) {
+ADV* get_predictor(Weights& w, ADV_Vec* input) {
 
     vector<ADV*> intermediates (NUM_HIDDEN_NODES);
 
     for(int i {0}; i<NUM_HIDDEN_NODES;i++){
         ADV* v = w.at(make_pair(0,i));
-        ADV_InnerProduct* ip = new ADV_InnerProduct (&input, v);
+        ADV_InnerProduct* ip = new ADV_InnerProduct (input, v);
         ADV_LeakyReLU* relu  = new ADV_LeakyReLU (ip);
         intermediates[i] = relu;
     }
@@ -74,63 +74,61 @@ ADV* get_predictor(Weights& w, ADV_Vec& input) {
   
 }
 
-ADV* get_error(ADV* f, Weights& w, ADV_Vec* y) {
-    ADV_Negate* noutput =new ADV_Negate(f);
-    ADV_Sum* sum = new ADV_Sum(y, f);
+ADV* get_error(ADV* f, ADV_Vec* y) {
+    ADV_Negate* nf =new ADV_Negate(f);
+    ADV_Sum* sum = new ADV_Sum(y, nf);
     ADV_InnerProduct* err = new ADV_InnerProduct (sum, sum);
-    return err;
+    ADV_Vec* scale_by_two = new ADV_Vec("const 1/2", 1);
+    scale_by_two->setValue({0.5});
+
+    ADV_VectorProduct* ret = new ADV_VectorProduct(err, scale_by_two);
+    return ret;
         
 }
+double model_error(Training_Data& data, ADV* err ) {
+    double ret = 0.0;
 
+    for (auto& row : data) {
+        ret += (*err)({ {"input", row.x}, {"target", row.t}})[0];
+
+    }
+    return ret;
+}
 
 int main() {
     Weights weights {};
     initialize_weights(weights);
 
-    vector<valarray<double>> xs = {{1,1},{0,0},{0,1},{1,0}};
-    vector<valarray<double>> ys = {{0}, {0}, {1}, {1}};
-    double learning_rate = 0.1;
+    double learning_rate = 0.025;
 
-    for( auto [p,_v]: weights) {
-        ADV* v = weights.at(p);
-        valarray<double> t = (*v)();
-        cout << p.first << ":" << p.second << "=" << t[0] <<"\n";
-    }
-
-
-    ADV_Vec input ("input",INPUT_SIZE);
+    ADV_Vec input ("input",INPUT_SIZE+1);
     ADV_Vec target ("target",OUTPUT_SIZE);
-    ADV* predictor = get_predictor(weights, input);
-    ADV* error = get_error(predictor, weights, &target);
+    ADV* predictor = get_predictor(weights, &input);
+    ADV* error = get_error(predictor, &target);
 
-    double err =0;
-    while(err == err){
-        cout << "predicting...\n";
-        for(int i {0}; i<4;i++){
-            double y_pred = (*predictor)({ {"input", xs[i]}})[0];
-            double y_real = ys[i][0];
-            cout << "predicting for row " << i << " real value: " << y_real
-                 << "predicted value: " << y_pred << "\n";
-        }
-        cout << "training...\n";
-        for(int i {0}; i<4;i++){
-            err = (*error)({ {"input", xs[i]}, {"target", ys[i]}})[0];
-            cout << "error for " << i << ": " << err << "\n";
+    Training_Data rows = load_data_from_file("mnist_train.txt", 1000);
+    Training_Data test_rows = load_data_from_file("mnist_test.txt", 10);
+
+    int count = 1;
+    double other_error =0;
+    double all_error = 0;
+    double single_error =0;
+    int num_right = 0;
+    while(count <= 10001){
+        cout << "epoch " << count << "...\n";
+        for(auto row : rows){
+            
+            single_error =  (*error)({ {"input", row.x}, {"target", row.t}})[0];
             error->take_gradient({1});
+
             for(auto [coords, adv] : weights){ 
                 valarray<double> gradient = adv->get_gradient();
                 valarray<double> new_val = adv->val - (learning_rate * gradient);
-                cout << "gradient for (" << coords.first << "," << coords.second  << ") "
-                     << gradient
-                     << " and old val for weights "
-                     << adv->val
-                     << " and new val for weights "
-                     << new_val
-                     << "\n";
                 adv->setValue(new_val);
             }
         }
-        cout << "done!\n";
+        cout << "model error on test set: " << model_error(test_rows, error) << "\n";
+        count++;
 
     }
 
