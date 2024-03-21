@@ -8,7 +8,7 @@ import autodiff;
     
 using namespace std;
 const unsigned int INPUT_SIZE = 2;
-const unsigned int NUM_HIDDEN_NODES= 5;
+const unsigned int NUM_HIDDEN_NODES= 1;
 const unsigned int OUTPUT_SIZE = 1;
 
 struct Training_Datum {
@@ -19,7 +19,8 @@ struct Training_Datum {
 
 typedef vector<Training_Datum> Training_Data ;
 
-Training_Data rows = {{{1,0,0}, 0, {0}}, {{1,0,1},1,{1}}, {{1,1,0},1,{1}},{{1,1,1},0,{0}}};
+//Training_Data rows = {{{1,0,0}, 0, {0}}, {{1,0,1},1,{1}}, {{1,1,0},1,{1}},{{1,1,1},0,{0}}};
+Training_Data rows = {{{1,1}, 0, {0}}, {{0,1},1,{1}}, {{1,0},1,{1}},{{0,0},0,{0}}};
 
 typedef map<pair<int,int>, ADV*> ADV_Weights;
 
@@ -29,6 +30,15 @@ struct FFNN_Model {
   const unsigned int num_hidden_nodes;
   const unsigned int output_size;
 };
+
+ostream& operator<<(ostream& os, valarray<double>& vec){
+    os << "{ ";
+    for(int i {0};i<vec.size();i++) {
+        os << vec[i] << ", ";
+    }
+    os << " }";
+    return os;
+}
 
 valarray<double> getFromPointer(double* weights, int start, int size) {
     valarray<double> ret (size);
@@ -48,10 +58,10 @@ FFNN_Model initiate_weights_ ( unsigned int input_size
 
     random_device rd;  
     mt19937 gen(rd()); 
-    uniform_real_distribution<> dis(0.095, 0.095000001);
+    uniform_real_distribution<> dis(0.45, 0.55000001);
 
 
-    auto get_rand = [&](){ return dis(rd); } ;
+    auto get_rand = [&](){ return (double)(round(dis(rd))*2); } ;
     for(int i {0}; i < weights0_size+weights1_size;i++){
         *(weights+i) = get_rand();
     }
@@ -64,7 +74,7 @@ FFNN_Model initiate_weights_ ( unsigned int input_size
         w.insert({make_pair(0,i), v});
     }
     for(int i {0}; i< OUTPUT_SIZE; i++) {
-        ADV_Vec* v = new ADV_Vec ("weights1-"+i, num_nodes);
+        ADV_Vec* v = new ADV_Vec ("weights1-"+to_string(i), num_nodes);
         v->setValue(getFromPointer(weights, weights0_size+output_size*i, num_nodes));
         w.insert({make_pair(1,i), v});
     }
@@ -99,7 +109,7 @@ double layer_0_activation(double x) {
   //return  tanh(x);
   //return 1 / (1+ exp(-x));
   if(x>0) return x;
-  return 0.001*x;
+  return 0.01*x;
 }
 
 double layer_0_activation_prime(double x) {
@@ -218,12 +228,22 @@ double model_error(Training_Data& data, FFNN_Model& model) {
     return 0.5*err;
 }
 
-void train_weights( FFNN_Model& model
+double model_error(Training_Data& data, ADV* err ) {
+    double ret = 0.0;
+
+    for (auto& row : data) {
+        ret += (*err)({ {"input", row.x}, {"target", row.t}})[0];
+
+    }
+    return ret;
+}
+
+valarray<double> train_weights( FFNN_Model& model
                   , Training_Datum& row
                   , double learning_rate ) {
     int weights0_size = model.input_size * model.num_hidden_nodes;
     int weights1_size = model.num_hidden_nodes * model.output_size;
-    double grad_weights[weights0_size + weights1_size] {};
+    valarray<double> grad_weights (weights0_size + weights1_size);
 
     valarray<LayerOutput> output_0 (model.num_hidden_nodes);
     all_layer_0_outputs(model, row.x, output_0);
@@ -262,8 +282,7 @@ void train_weights( FFNN_Model& model
         for(int k {0}; k < model.input_size; k++){
             unsigned int index { j*model.input_size+k };
 
-            grad_weights[index] = - learning_rate
-                                * activation_term
+            grad_weights[index] = - activation_term
                                 * output_0[j].output
                                 * output_0[j].activation_prime
                                 * row.x[k];
@@ -274,16 +293,16 @@ void train_weights( FFNN_Model& model
         for(int i {0}; i<model.num_hidden_nodes;i++){
             int index = weights0_size + j*model.num_hidden_nodes + i;
 
-            grad_weights[index] = - learning_rate
-                                * errors[j]
+            grad_weights[index] = - errors[j]
                                 * output_1_prime[j]
                                 * output_0[i].output;
         }
     }
 
     for(int i {0}; i < weights0_size + weights1_size; i++) {
-        *(model.weights+i) = *(model.weights+i) + grad_weights[i];
+        *(model.weights+i) = *(model.weights+i) - learning_rate * grad_weights[i];
     }
+    return grad_weights;
 
 }
 
@@ -292,10 +311,8 @@ ADV* get_predictor(ADV_Weights& w, ADV_Vec* input) {
     vector<ADV*> intermediates (NUM_HIDDEN_NODES);
 
     for(int i {0}; i<NUM_HIDDEN_NODES;i++){
-        ADV* v = w.at(make_pair(0,i));
-        ADV_InnerProduct* ip = new ADV_InnerProduct (input, v);
-        ADV_LeakyReLU* relu  = new ADV_LeakyReLU (ip);
-        intermediates[i] = relu;
+        ADV_InnerProduct* ip = new ADV_InnerProduct (input, w.at(make_pair(0,i)));
+        intermediates[i] = new ADV_LeakyReLU(ip);
     }
 
     ADV_Concat* hidden_nodes = new ADV_Concat( intermediates );
@@ -303,12 +320,11 @@ ADV* get_predictor(ADV_Weights& w, ADV_Vec* input) {
     vector<ADV*> finals (OUTPUT_SIZE);
 
     for(int i {0}; i<OUTPUT_SIZE;i++) {
-        ADV_InnerProduct* ip = new ADV_InnerProduct(hidden_nodes, w.at(make_pair(1,i)));
-        finals[i] = ip;
+        finals[i] = new ADV_InnerProduct(hidden_nodes, w.at(make_pair(1,i)));
     }
 
     ADV_Concat* ret = new ADV_Concat (finals);
-    return ret;
+    return finals[0];
   
 }
 
@@ -316,43 +332,248 @@ ADV* get_error(ADV* f, ADV_Vec* y) {
     ADV_Negate* nf =new ADV_Negate(f);
     ADV_Sum* sum = new ADV_Sum(y, nf);
     ADV_InnerProduct* err = new ADV_InnerProduct (sum, sum);
-    return err;
+
+    ADV_Vec* scale_by_two = new ADV_Vec("const 1/2", 1);
+    scale_by_two->setValue({0.5});
+
+    ADV_VectorProduct* ret = new ADV_VectorProduct(err, scale_by_two);
+    return ret;
         
 }
 
 int main() {
+    cout << "Testing ADV_InnerProduct.\n";
+    cout << "Single var tests.\n";
+    cout << "Testing ADV_InnerProduct.\n";
+    ADV_Vec x ("x", 1);
+    ADV_InnerProduct f (&x,&x);
+    f({{"x",{2}}}) ;
+    f.take_gradient({1});
+    double result = x.get_gradient()[0];
+    cout << "result should be 4, it is: " << result << "\n";
+    if(result != 4) return 1;
+    f({{"x",{5}}}) ;
+    f.take_gradient({1});
+    result = x.get_gradient()[0];
+    cout << "result should be 10, it is: " << result << "\n";
+    if(result != 10) return 1;
+
+    cout << "Testing ADV_Concat\n";
+    ADV_Concat g ({&f});
+    g( { {"x", {15}}});
+    g.take_gradient({1});
+    result = x.get_gradient()[0];
+    cout << "result should be 30, it is: " << result << "\n";
+    if(result != 30) return 1;
+
+    ADV_Vec x_1 ("x_1", 2);
+    ADV_Vec x_2 ("x_2", 2);
+    ADV_InnerProduct x_s (&x_1, &x_2);
+    x_s( { {"x_1", {1, 2}}, {"x_2", {3, 4}}});
+    x_s.take_gradient({1});
+    result = x_1.get_gradient()[0];
+    cout << "result should be 3, it is: " << result << "\n";
+    if(result != 3) return 1;
+
+    ADV_Vec x11 ("x11", 1);
+    ADV_Vec x12 ("x12", 1);
+    ADV_Vec x21 ("x21", 1);
+    ADV_Vec x22 ("x22", 1);
+
+    ADV_Concat x1 ({&x11, &x12});
+    ADV_Concat x2 ({&x21, &x22});
+    ADV_InnerProduct xs (&x1, &x2);
+    xs({ {"x11", {1}}
+       , {"x12", {2}}
+       , {"x21", {3}}
+       , {"x22", {4}}
+        });
+    xs.take_gradient({1});
+    result = x11.get_gradient()[0];
+    cout << "result should be 3, it is : " << result << "\n";
+    if(result != 3) return 1;
+
+    ADV_Vec y11 ("y11", 1);
+    ADV_Vec y12 ("y12", 1);
+    ADV_Vec y21 ("y21", 1);
+    ADV_Vec y22 ("y22", 1);
+
+    ADV_Concat y1 ({&y11, &y12});
+    ADV_Concat y2 ({&y21, &y22});
+
+    ADV_InnerProduct ys (&y1, &y2);
+
+    ADV_Concat xy ({&xs, &ys});
+    ADV_InnerProduct concat_test (&xy, &xy);
+
+    concat_test({ {"x11", {1}}
+                , {"x12", {2}}
+                , {"x21", {3}}
+                , {"x22", {4}}
+                , {"y11", {0}}
+                , {"y12", {0}}
+                , {"y21", {0}}
+                , {"y22", {5}}
+                 });
+    concat_test.take_gradient({1});
+    result = x11.get_gradient()[0];
+    cout << "result should be 66, it is : " << result << "\n";
+    if(result != 66) return 1;
+
+    
+
+    
+
+    //cout << "Testing ADV_Negate\n";
+    //ADV_Negate h (&x);
+    //h( { {"x", {7}}});
+    //h.take_gradient({1});
+    //result = x.get_gradient()[0];
+    //cout << "result should be -1, it is: " << result << "\n";
+    //if(result != -1) return 1;
+
+    //ADV_Negate h2 (&f);
+    //h2( { {"x", {7}}});
+    //h2.take_gradient({1});
+    //result = x.get_gradient()[0];
+    //cout << "result should be -14, it is: " << result << "\n";
+    //if(result != -14) return 1;
+
+    //cout << "Testing ADV_Sum\n";
+    //ADV_Sum j (&f, &h); // x^2 - x
+    //j( { { "x", {9}}});
+    //j.take_gradient({1});
+    //result = x.get_gradient()[0];
+    //cout << "result should be 17, it is: " << result << "\n";
+    //if(result != 17) return 1;
+
+    //cout << "Testing ADV_LeakyReLU\n";
+    //ADV_LeakyReLU k (&j);
+    //k( { { "x", {3}}}); // LeakyReLU ( x^2 - x), d/dx = LeakyReLU'(x^2 - x) (2x - 1) 
+    //k.take_gradient({1});
+    //result = x.get_gradient()[0];
+    //cout << "result should be 5, it is: " << result << "\n";
+    //if(result != 5) return 1;
+
+    //ADV_Negate nf (&f);
+    //ADV_Sum snf(&x, &nf);
+    //ADV_LeakyReLU l (&snf); // LeakyReLU( x-x^2), d/x = LeakyReLU'(x-x^2) (1-2x)
+    //l({ { "x", {7}}});
+    //l.take_gradient({1});
+    //result = x.get_gradient()[0];
+    //cout << "result should be -0.13, it is: " << result << "\n";
+    //if(abs(result - -0.13) > 0.00001) return 1;
+    //
+
+    //cout << "Multivar tests.\n";
+    //cout << "Testing ADV_InnerProduct.\n";
+    //ADV_Vec y ("y", 3);
+    //ADV_InnerProduct f1 (&y,&y);
+    //f1({{"y",{2,3,5}}}) ;
+    //f1.take_gradient({1});
+    //valarray<double> res = y.get_gradient();
+    //cout << "result should be {4,6,10}, it is: " << res << "\n";
+    //if(res[0] != 4 || res[1] != 6 || res[2] != 10) return 1;
+
+    //cout << "Testing ADV_LeakyReLU\n";
+    //ADV_LeakyReLU f2 (&f1);
+    //f2( { { "y", {1,2,3}}}); // LeakyReLU (y_1^2 + y_2^2 + y_3^2), d/dy_i = LeakyReLU'(\Sigma y_i^2)  2y_i
+    //f2.take_gradient({1});
+    //res = y.get_gradient();
+    //cout << "result should be {2,4,6}}, it is: " << res << "\n";
+
+
+
+
+
+
     ADV_Weights weights {};
 
     int num_right_scratch = 0;
     int num_right_adv = 0;
     
-    FFNN_Model model = initiate_weights_(INPUT_SIZE+1, NUM_HIDDEN_NODES, OUTPUT_SIZE, weights);
+    FFNN_Model model = initiate_weights_(INPUT_SIZE, NUM_HIDDEN_NODES, OUTPUT_SIZE, weights);
+    ADV_Vec input ("input",INPUT_SIZE);
+    ADV_Vec target ("target",OUTPUT_SIZE);
+    ADV* predictor = get_predictor(weights, &input);
+    ADV* error = get_error(predictor, &target);
 
     for(auto row : rows) {
 
         valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
         all_layer_0_outputs(model, row.x, output_0);
         model_output(model, output_0, model_out);
+        double yp = (*predictor)({ {"input", row.x}})[0];
 
         if(row.y == lround(from_model_output(model_out))) num_right_scratch++;
+        if(row.y == round(yp)) num_right_adv++;
+
+        cout << "x: " << row.x << "\n"
+             << "y: " << row.y << "\n"
+             << "y-scratch: " << from_model_output(model_out) << "\n"
+             << "y-adv: " << yp << "\n";
 
     }
     cout << "num right on scratch model: " << num_right_scratch << "/" << rows.size() << "\n";
+    cout << "num right on adv model: " << num_right_adv << "/" << rows.size() << "\n";
     cout << "scratch model mean squared error: " << model_error(rows, model) << "\n";
+    cout << "adv model mean squared error: " << model_error(rows, error) << "\n";
 
     double scratch_error = 99;
+    double learning_rate = 0.1;
     int epochs = 1;
-    int MAX_EPOCH = 10000;
+    int MAX_EPOCH = 2;
+    num_right_adv=0;
+    num_right_scratch=0;
 
     while(epochs <= MAX_EPOCH){
         for(auto row : rows) {
-            train_weights(model, row, -0.05);
+
+            valarray<double> scratch_gradients = train_weights(model, row, learning_rate);
+            (*error)({ {"input", row.x}, {"target", row.t}});
+            error->take_gradient({1});
+            for(auto [coords, adv] : weights) {
+
+                int start = coords.first == 0 ? coords.second * model.input_size : (model.input_size * model.num_hidden_nodes) + (coords.second * model.output_size);
+                int size = coords.first == 0 ? model.input_size : model.num_hidden_nodes;
+                valarray<double> scratch_grad = scratch_gradients[slice(start, size, 1)];
+
+                valarray<double> adv_grad =  adv->get_gradient() ;
+
+
+                    cout << "scratch gradient for weight (" << coords.first << "," << coords.second << "): "
+                         << scratch_grad << "\n";
+                    cout << "adv gradient for same: " << adv_grad << "\n";
+                valarray<double> new_val = adv->val - (learning_rate * scratch_grad); //adv_grad);
+                adv->setValue(new_val);
+            }
         }
         scratch_error = model_error(rows, model);
         cout << "epoch " << epochs << " finished.\n";
         cout << "scratch model mean squared error:: " << scratch_error << "\n";
+        cout << "adv model mean squared error: " << model_error(rows, error) << "\n";
 
         epochs++;
+        for(auto row : rows) {
+
+            valarray<LayerOutput> model_out (model.output_size), output_0 (model.num_hidden_nodes);
+            all_layer_0_outputs(model, row.x, output_0);
+            model_output(model, output_0, model_out);
+            double yp = (*predictor)({ {"input", row.x}})[0];
+
+            if(row.y == lround(from_model_output(model_out))) num_right_scratch++;
+            if(row.y == round(yp)) num_right_adv++;
+
+            cout << "x: " << row.x << "\n"
+                 << "y: " << row.y << "\n"
+                 << "y-scratch: " << from_model_output(model_out) << "\n"
+                 << "y-adv: " << yp << "\n";
+
+        }
+        cout << "num right on scratch model: " << num_right_scratch << "/" << rows.size() << "\n";
+        cout << "num right on adv model: " << num_right_adv << "/" << rows.size() << "\n";
+        num_right_adv=0;
+        num_right_scratch=0;
     }
     return 0;
 }
