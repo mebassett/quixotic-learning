@@ -9,7 +9,7 @@ import mnistdata;
     
 using namespace std;
 const unsigned int INPUT_SIZE = 784;
-const unsigned int NUM_HIDDEN_NODES= 500;
+const unsigned int NUM_HIDDEN_NODES= 100;
 const unsigned int OUTPUT_SIZE = 10;
 
 typedef map<pair<int,int>, ADV*> Weights;
@@ -95,6 +95,13 @@ double model_error(Training_Data& data, ADV* err ) {
     return ret;
 }
 
+int from_model_output(valarray<double>& out) {
+  for(int i=0; i<out.size(); i++) {
+    if(out[i] == out.max()) return i;
+  }
+  return -1;
+}
+
 int main() {
     Weights weights {};
     initialize_weights(weights);
@@ -106,19 +113,26 @@ int main() {
     ADV* predictor = get_predictor(weights, &input);
     ADV* error = get_error(predictor, &target);
 
-    Training_Data rows = load_data_from_file("mnist_train.txt", 1000);
-    Training_Data test_rows = load_data_from_file("mnist_test.txt", 10);
+    Training_Data rows = load_data_from_file("mnist_train.txt", 60000);
+    Training_Data test_rows = load_data_from_file("mnist_test.txt", 10000);
 
     int count = 1;
-    double other_error =0;
-    double all_error = 0;
-    double single_error =0;
     int num_right = 0;
+    int training_examples = 0;
+    valarray<double> out;
     while(count <= 10001){
+        num_right = 0;
+        for(auto row : test_rows) {
+            out = (*predictor)( { {"input", row.x}});
+            if(row.y == from_model_output(out)) num_right++;
+        }
+        cout << "num right: "<< num_right << " / " << test_rows.size() << ".\n";
+        cout << "model error on test set: " << model_error(test_rows, error) << "\n";
+
         cout << "epoch " << count << "...\n";
         for(auto row : rows){
             
-            single_error =  (*error)({ {"input", row.x}, {"target", row.t}})[0];
+            (*error)({ {"input", row.x}, {"target", row.t}})[0];
             error->take_gradient({1});
 
             for(auto [coords, adv] : weights){ 
@@ -126,9 +140,11 @@ int main() {
                 valarray<double> new_val = adv->val - (learning_rate * gradient);
                 adv->setValue(new_val);
             }
+            training_examples++;
+            if(training_examples % 10000 == 0) cout << "training examples so far: "<< training_examples << "/"<< rows.size() << ".\n";
         }
-        cout << "model error on test set: " << model_error(test_rows, error) << "\n";
         count++;
+        training_examples = 0;
 
     }
 
