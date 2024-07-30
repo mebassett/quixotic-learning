@@ -1,25 +1,13 @@
-module;
 #include <iostream>
 #include<valarray>
 #include<cmath>
 #include<vector>
 #include<sstream>
 #include<fstream>
-export module mnistdata;
+#include "mnistdata.h"
 using namespace std;
 
-
-const unsigned int INPUT_SIZE = 784;
-const unsigned int OUTPUT_SIZE = 10;
-
-export struct Training_Datum {
-  valarray<double> x;
-  int y;
-  valarray<double> t;
-};
-export typedef vector<Training_Datum> Training_Data ;
-
-export valarray<double> to_model_output(int in) {
+valarray<double> MNIST::to_model_output(int in) {
     valarray<double> ret(OUTPUT_SIZE);
     for(int i = 0; i<OUTPUT_SIZE; i++)
       if(i==in)
@@ -30,7 +18,7 @@ export valarray<double> to_model_output(int in) {
 
 }
 
-export Training_Data load_data_from_file(string filename, int cutoff) {
+MNIST::Training_Data MNIST::load_data_from_file(string filename, int cutoff) {
   ifstream ifs {filename};
 
   if(!ifs) {
@@ -59,7 +47,7 @@ export Training_Data load_data_from_file(string filename, int cutoff) {
               current_row = (1.0/max) * current_row; 
           current_row[0] = 1.0;
 
-          rows.push_back({current_row, (int)lround(f), to_model_output((int)lround(f))});
+          rows.push_back({current_row, (int)lround(f), MNIST::to_model_output((int)lround(f))});
         
           continue;
         }

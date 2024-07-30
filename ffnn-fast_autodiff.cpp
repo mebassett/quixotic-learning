@@ -4,13 +4,14 @@
 #include<utility>
 #include<random>
 #include<valarray>
-import fast_autodiff;
-import mnistdata;
+#include "fast_autodiff.h"
+#include "mnistdata.h"
     
 using namespace std;
-const unsigned int INPUT_SIZE = 784;
+using namespace FA;
+using namespace MNIST;
+
 const unsigned int NUM_HIDDEN_NODES= 100;
-const unsigned int OUTPUT_SIZE = 10;
 
 void initialize_weights(Matrix* m1, Matrix* m2, double lower_bound, double upper_bound) {
     random_device rd;  
