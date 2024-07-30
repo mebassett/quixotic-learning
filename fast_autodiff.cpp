@@ -11,7 +11,19 @@ export struct AD {
     unsigned int rows;
     unsigned int cols;
 
+    double* grad;
+
     virtual void compute() = 0;
+
+    virtual void resetGrad() {
+        for(int i {0}; i< this->rows * this->cols; i++)
+            *(this->grad+i) = 0;
+    }
+
+    virtual void pushGrad(double seed[]) {
+        for(int i {0}; i< this->rows * this->cols; i++)
+            *(this->grad + i) += seed[i];
+    }
 
     AD(string _name, unsigned int _rows, unsigned int _cols)
         : name(_name)
@@ -22,29 +34,26 @@ export struct AD {
 
 export struct AbstractCol : AD {
     double* value;
-    double* grad;
     
-    void reset_grad() {
-        for(int i {0}; i<_rows; i++)
-            *(this->grad+i) = 1;
-    }
 
     AbstractCol(string _name, unsigned int _rows)
         : AD(_name, _rows, 1) {
         this->value = new double[_rows];
         this->grad = new double[_rows];
         for(int i {0}; i<_rows; i++)
-            *(this->grad+i) = 1;
+            *(this->grad+i) = 0;
     }
 };
 
 export struct Col : AbstractCol { 
     void compute() {}
 
-    void load_values(valarray<double>& newValues) {
-        for(int i {0}; i < newValues.size(); i++){
-            *(this->values + i) = newValues[i];
-        }
+    void loadValues(valarray<double> newValues) {
+        if(newValues.size() != this->rows)
+            throw out_of_range("size of col " + this->name + " (" + to_string(this->rows) + ") does not mathc size of valarray (" + to_string(newValues.size()) + ").");
+
+        for(int i {0}; i< newValues.size();i++)
+            *(this->value + i) = newValues[i];
     }
 
     Col(string _name, unsigned int _rows)
@@ -54,8 +63,16 @@ export struct Col : AbstractCol {
 
 
 export struct Matrix : AD {
-
+    double* value;
     void compute() {}
+
+    void loadValues(valarray<double> newValues) {
+        if(newValues.size() != this->rows * this->cols)
+            throw out_of_range("size of matrix " + this->name + " (" + to_string(this->rows * this->cols) + ") does not match size of valarray (" + to_string(newValues.size()) + ").");
+
+        for(int i {0}; i< newValues.size();i++)
+            *(this->value + i) = newValues[i];
+    }
 
 
     Matrix(string _name, unsigned int _rows, unsigned int _cols)
@@ -63,8 +80,8 @@ export struct Matrix : AD {
 
         this->value = new double[_rows*_cols];
         this->grad = new double[_rows*_cols];
-        for(int i {0}; i<_rows; i++)
-            *(this->grad+i) = 1;
+        for(int i {0}; i<_rows*_cols; i++)
+            *(this->grad+i) = 0;
 
     }
 };
@@ -72,6 +89,32 @@ export struct Matrix : AD {
 export struct MatrixColProduct : AbstractCol {
     Matrix* matrix;
     AbstractCol* col;
+
+    void resetGrad() override {
+        AD::resetGrad();
+        this->matrix->resetGrad();
+        this->col->resetGrad();
+
+    }
+
+    void pushGrad(double seed[]) override {
+        // assert len(seed) == this->matrix->rows
+
+        int size = this->matrix->rows * this->matrix->cols;
+        double matGrad[size];
+        double colGrad[this->col->rows] = {0};
+        for(int i {0}; i< this->matrix->rows; i++){
+            for(int j {0}; j< this->matrix->cols; j++) {
+                int index = j + this->matrix->cols * i;
+                matGrad[index] = seed[i] * *(this->col->value + j);
+                colGrad[j] += seed[i] * *(this->matrix->value + index);
+            }
+        }
+        this->matrix->pushGrad(matGrad);
+        this->col->pushGrad(colGrad);
+
+
+    }
 
     void compute() {
         matrix->compute();
@@ -82,8 +125,6 @@ export struct MatrixColProduct : AbstractCol {
             for(int i {0}; i <matrix->cols; i++) {
                 
                 innerProductValue += *(this->matrix->value + (row * this->matrix->cols) + i) * *(this->col->value + i);
-                *(this->col->grad + i) *= *(this->matrix->value + (row * this->matrix->cols) + i);
-                *(this->matrix->grad + (row * this->matrix->cols) + i) *= *(this->col->value + i); 
 
             }
             *(this->value + row) = innerProductValue;
@@ -101,18 +142,31 @@ export struct MatrixColProduct : AbstractCol {
 
 export struct ColLeakyReLU : AbstractCol { 
     AbstractCol* col;
+    
+    void resetGrad() override {
+        AD::resetGrad();
+        this->col->resetGrad();
+    }
+
+    void pushGrad(double seed[]) override {
+        double newSeed[this->col->rows];
+        for(int i {0}; i< this->col->rows; i++)
+            newSeed[i] = seed[i] * *(this->grad + i);
+        
+        this->col->pushGrad(newSeed);
+    }
 
 
     void compute() {
         this->col->compute();
 
         for(int i {0}; i<this->col->rows; i++) {
-            if(*(this->col->value + i) > 9) {
+            if(*(this->col->value + i) > 0) {
                 *(this->value +i) = *(this->col->value +i);
-                *(this->col->grad + i) *= 1;
+                *(this->grad + i) = 1;
             } else {
                 *(this->value +i) = 0.01 * *(this->col->value +i);
-                *(this->col->grad + i) *= 0.01;
+                *(this->grad + i) = 0.01;
             }
         }
 
@@ -131,25 +185,49 @@ export struct Scalar : AbstractCol {
 
     double scalar;
 
+    void resetGrad() override {
+        AD::resetGrad();
+        this->col->resetGrad();
+    }
+
+    void pushGrad(double seed[]) override {
+        double newSeed[this->col->rows];
+
+        for(int i {0}; i< this->col->rows; i++)
+            newSeed[i] = seed[i] * this->scalar;
+        
+        this->col->pushGrad(newSeed);
+    }
+
     void compute() {
         this->col->compute();
 
         for(int i {0}; i<this->col->rows; i++) {
             *(this->value +i) = this->scalar * *(this->col->value +i);
-            *(this->col->grad + i) *= this->scalar;
         }
     }
 
     Scalar(AbstractCol* _col, double _scalar)
         : col(_col)
         , scalar(_scalar)
-        , AbstractCol( "Scalar of " + _col->name + " by "+ to_string(_scalar), _col->rows) {
+        , AbstractCol( "Scalar of (" + _col->name + ") by "+ to_string(_scalar), _col->rows) {
     }
 };
 
 export struct AddCol : AbstractCol {
     AbstractCol* col1;
     AbstractCol* col2;
+
+    void resetGrad() override {
+        AD::resetGrad();
+        this->col1->resetGrad();
+        this->col2->resetGrad();
+    }
+
+    void pushGrad(double seed[]) override {
+        this->col1->pushGrad(seed);
+        this->col2->pushGrad(seed);
+    }
 
 
     void compute() {
@@ -165,13 +243,35 @@ export struct AddCol : AbstractCol {
     AddCol(AbstractCol* _col1, AbstractCol* _col2) 
         : col1(_col1)
         , col2(_col2)
-        , AbstractCol("Sum of " + _col1->name + " and " + _col2->name, _col1->rows) {
+        , AbstractCol("Sum of (" + _col1->name + ") and (" + _col2->name + ")", _col1->rows) {
     }
 };
 
 export struct InnerProduct : AbstractCol {
     AbstractCol* col1;
     AbstractCol* col2;
+
+    void resetGrad() override {
+        AD::resetGrad();
+        this->col1->resetGrad();
+        this->col2->resetGrad();
+    }
+
+    void pushGrad(double seed[]) override {
+        // assume len(seed)=1 here...
+        double vec1[this->col1->rows];
+        double vec2[this->col2->rows];
+
+        for(int i {0}; i< this->col1->rows; i++)
+            vec1[i] = seed[0] * *(this->col1->value + i);
+        
+        this->col2->pushGrad(vec1);
+
+        for(int i {0}; i< this->col2->rows; i++)
+            vec2[i] = seed[0] * *(this->col2->value + i);
+        
+        this->col1->pushGrad(vec2);
+    }
 
 
     void compute() {
@@ -181,9 +281,7 @@ export struct InnerProduct : AbstractCol {
         double sum = 0;
 
         for(int i {0}; i< this->col1->rows;i++) {
-            sum += this->col1->value[i] + this->col2->value[i];
-            *(this->col1->grad + i) *= *(this->col2->grad + i);
-            *(this->col2->grad + i) *= *(this->col1->grad + i);
+            sum += this->col1->value[i] * this->col2->value[i];
         }
         *(this->value) = sum;
 
@@ -192,6 +290,7 @@ export struct InnerProduct : AbstractCol {
     InnerProduct(AbstractCol* _col1, AbstractCol* _col2) 
         : col1(_col1)
         , col2(_col2)
-        , AbstractCol("Inner Product of " + _col1->name + " and " + _col2->name, 1) {
+        , AbstractCol("Inner Product of (" + _col1->name + ") and (" + _col2->name + ")", 1) {
     }
 };
+

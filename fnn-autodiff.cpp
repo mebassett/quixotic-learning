@@ -120,7 +120,8 @@ int main() {
     int num_right = 0;
     int training_examples = 0;
     valarray<double> out;
-    while(count <= 10001){
+    while(count <= 10){
+        count = 99999;
         num_right = 0;
         for(auto row : test_rows) {
             out = (*predictor)( { {"input", row.x}});
