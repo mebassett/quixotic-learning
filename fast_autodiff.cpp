@@ -25,6 +25,7 @@ AD::AD(string _name, unsigned int _rows, unsigned int _cols)
     , cols(_cols)
 {}
 
+
     
 
 AbstractCol::AbstractCol(string _name, unsigned int _rows)
@@ -33,6 +34,11 @@ AbstractCol::AbstractCol(string _name, unsigned int _rows)
     this->grad = new double[_rows];
     for(int i {0}; i<_rows; i++)
         *(this->grad+i) = 0;
+}
+
+AbstractCol::~AbstractCol() {
+    delete this->value;
+    delete this->grad;
 }
 
 void Col::loadValues(valarray<double> newValues) {
@@ -66,6 +72,11 @@ Matrix::Matrix(string _name, unsigned int _rows, unsigned int _cols)
     for(int i {0}; i<_rows*_cols; i++)
         *(this->grad+i) = 0;
 
+}
+
+Matrix::~Matrix() {
+    delete this->value;
+    delete this->grad;
 }
 
 void MatrixColProduct::resetGrad() {

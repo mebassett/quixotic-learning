@@ -20,6 +20,7 @@ struct AD {
 struct AbstractCol : AD {
     double* value;
     AbstractCol(std::string _name, unsigned int _rows);
+    ~AbstractCol();
 };
 
 struct Col : AbstractCol {
@@ -31,6 +32,7 @@ struct Matrix : AD {
     double* value;
     void loadValues(std::valarray<double> newValues);
     Matrix(std::string _name, unsigned int _rows, unsigned int _cols);
+    ~Matrix();
 };
 
 struct MatrixColProduct : AbstractCol {
