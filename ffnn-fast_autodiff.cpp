@@ -13,7 +13,7 @@ using namespace MNIST;
 
 const unsigned int NUM_HIDDEN_NODES= 100;
 
-void initialize_weights(Matrix* m1, Matrix* m2, double lower_bound, double upper_bound) {
+void initialize_weights(Matrix* m1, Matrix* m2, float lower_bound, float upper_bound) {
     random_device rd;  
     mt19937 gen(rd()); 
     uniform_real_distribution<> dis(lower_bound, upper_bound);
@@ -26,8 +26,8 @@ void initialize_weights(Matrix* m1, Matrix* m2, double lower_bound, double upper
         *(m2->value+i) = get_rand();
 }
 
-int fromModelOutput(double* out) {
-  double max = *max_element(out, out + OUTPUT_SIZE);
+int fromModelOutput(float* out) {
+  float max = *max_element(out, out + OUTPUT_SIZE);
   for(int i {0}; i<OUTPUT_SIZE; i++) {
     if(*(out+i) == max) return i;
   }
@@ -35,7 +35,7 @@ int fromModelOutput(double* out) {
 }
 
 int main() {
-     double learningRate = 0.025;
+     float learningRate = 0.025;
 
      Matrix* w1 = new Matrix ("weight1", NUM_HIDDEN_NODES, INPUT_SIZE);
      Matrix* w2 = new Matrix ("weight2", OUTPUT_SIZE, NUM_HIDDEN_NODES);
@@ -57,9 +57,9 @@ int main() {
     int count = 1;
     int numRight = 0;
     int trainingExamples = 0;
-    double errorRate;
+    float errorRate;
 
-    double seed[1] = { 1.0 };
+    float seed[1] = { 1.0 };
 
     while(count <= 1) {
 

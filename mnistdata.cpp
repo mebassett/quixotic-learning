@@ -7,8 +7,8 @@
 #include "mnistdata.h"
 using namespace std;
 
-valarray<double> MNIST::to_model_output(int in) {
-    valarray<double> ret(OUTPUT_SIZE);
+valarray<float> MNIST::to_model_output(int in) {
+    valarray<float> ret(OUTPUT_SIZE);
     for(int i = 0; i<OUTPUT_SIZE; i++)
       if(i==in)
         ret[i] = 1;
@@ -30,14 +30,14 @@ MNIST::Training_Data MNIST::load_data_from_file(string filename, int cutoff) {
 
   for(string row_buffer_str; getline(ifs, row_buffer_str);) {
       istringstream row_buffer;
-      valarray<double> current_row(INPUT_SIZE+1);
+      valarray<float> current_row(INPUT_SIZE+1);
 
       row_buffer.str(row_buffer_str);
 
       int i = 0;
-      double max = 0;
+      float max = 0;
       
-      for(double f; row_buffer>>f;) {
+      for(float f; row_buffer>>f;) {
         if(i<INPUT_SIZE) {
           current_row[i+1] = f;
           if (f > max) max = f;

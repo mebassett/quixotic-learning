@@ -12,7 +12,7 @@ void AD::resetGrad() {
         *(this->grad+i) = 0;
 }
 
-void AD::pushGrad(double seed[]) {
+void AD::pushGrad(float seed[]) {
     for(int i {0}; i< this->rows * this->cols; i++)
         *(this->grad + i) += seed[i];
 }
@@ -30,8 +30,8 @@ AD::AD(string _name, unsigned int _rows, unsigned int _cols)
 
 AbstractCol::AbstractCol(string _name, unsigned int _rows)
     : AD(_name, _rows, 1) {
-    this->value = new double[_rows];
-    this->grad = new double[_rows];
+    this->value = new float[_rows];
+    this->grad = new float[_rows];
     for(int i {0}; i<_rows; i++)
         *(this->grad+i) = 0;
 }
@@ -41,7 +41,7 @@ AbstractCol::~AbstractCol() {
     delete this->grad;
 }
 
-void Col::loadValues(valarray<double> newValues) {
+void Col::loadValues(valarray<float> newValues) {
     if(newValues.size() != this->rows)
         throw out_of_range("size of col " + this->name + " (" + to_string(this->rows) + ") does not mathc size of valarray (" + to_string(newValues.size()) + ").");
 
@@ -55,7 +55,7 @@ Col::Col(string _name, unsigned int _rows)
 
 
 
-void Matrix::loadValues(valarray<double> newValues) {
+void Matrix::loadValues(valarray<float> newValues) {
     if(newValues.size() != this->rows * this->cols)
         throw out_of_range("size of matrix " + this->name + " (" + to_string(this->rows * this->cols) + ") does not match size of valarray (" + to_string(newValues.size()) + ").");
 
@@ -67,8 +67,8 @@ void Matrix::loadValues(valarray<double> newValues) {
 Matrix::Matrix(string _name, unsigned int _rows, unsigned int _cols)
     : AD(_name, _rows, _cols) {
 
-    this->value = new double[_rows*_cols];
-    this->grad = new double[_rows*_cols];
+    this->value = new float[_rows*_cols];
+    this->grad = new float[_rows*_cols];
     for(int i {0}; i<_rows*_cols; i++)
         *(this->grad+i) = 0;
 
@@ -86,12 +86,12 @@ void MatrixColProduct::resetGrad() {
 
 }
 
-void MatrixColProduct::pushGrad(double seed[]) {
+void MatrixColProduct::pushGrad(float seed[]) {
     // assert len(seed) == this->matrix->rows
 
     int size = this->matrix->rows * this->matrix->cols;
-    double matGrad[size];
-    double colGrad[this->col->rows] = {0};
+    float matGrad[size];
+    float colGrad[this->col->rows] = {0};
     for(int i {0}; i< this->matrix->rows; i++){
         for(int j {0}; j< this->matrix->cols; j++) {
             int index = j + this->matrix->cols * i;
@@ -110,7 +110,7 @@ void MatrixColProduct::compute() {
     col->compute();
 
     for(int row {0}; row < matrix->rows; row++) {
-        double innerProductValue {0};
+        float innerProductValue {0};
         for(int i {0}; i <matrix->cols; i++) {
             
             innerProductValue += *(this->matrix->value + (row * this->matrix->cols) + i) * *(this->col->value + i);
@@ -133,8 +133,8 @@ void ColLeakyReLU::resetGrad() {
     this->col->resetGrad();
 }
 
-void ColLeakyReLU::pushGrad(double seed[]) {
-    double newSeed[this->col->rows];
+void ColLeakyReLU::pushGrad(float seed[]) {
+    float newSeed[this->col->rows];
     for(int i {0}; i< this->col->rows; i++)
         newSeed[i] = seed[i] * *(this->grad + i);
     
@@ -168,8 +168,8 @@ void Scalar::resetGrad() {
     this->col->resetGrad();
 }
 
-void Scalar::pushGrad(double seed[]) {
-    double newSeed[this->col->rows];
+void Scalar::pushGrad(float seed[]) {
+    float newSeed[this->col->rows];
 
     for(int i {0}; i< this->col->rows; i++)
         newSeed[i] = seed[i] * this->scalar;
@@ -185,7 +185,7 @@ void Scalar::compute() {
     }
 }
 
-Scalar::Scalar(AbstractCol* _col, double _scalar)
+Scalar::Scalar(AbstractCol* _col, float _scalar)
     : col(_col)
     , scalar(_scalar)
     , AbstractCol( "Scalar of (" + _col->name + ") by "+ to_string(_scalar), _col->rows) {
@@ -197,7 +197,7 @@ void AddCol::resetGrad() {
     this->col2->resetGrad();
 }
 
-void AddCol::pushGrad(double seed[]) {
+void AddCol::pushGrad(float seed[]) {
     this->col1->pushGrad(seed);
     this->col2->pushGrad(seed);
 }
@@ -225,10 +225,10 @@ void InnerProduct::resetGrad() {
     this->col2->resetGrad();
 }
 
-void InnerProduct::pushGrad(double seed[]) {
+void InnerProduct::pushGrad(float seed[]) {
     // assume len(seed)=1 here...
-    double vec1[this->col1->rows];
-    double vec2[this->col2->rows];
+    float vec1[this->col1->rows];
+    float vec2[this->col2->rows];
 
     for(int i {0}; i< this->col1->rows; i++)
         vec1[i] = seed[0] * *(this->col1->value + i);
@@ -246,7 +246,7 @@ void InnerProduct::compute() {
     this->col1->compute();
     this->col2->compute();
 
-    double sum = 0;
+    float sum = 0;
 
     for(int i {0}; i< this->col1->rows;i++) {
         sum += this->col1->value[i] * this->col2->value[i];

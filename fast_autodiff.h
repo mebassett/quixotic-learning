@@ -10,27 +10,27 @@ struct AD {
     std::string name;
     unsigned int rows;
     unsigned int cols;
-    double* grad;
+    float* grad;
     virtual void compute();
     virtual void resetGrad();
-    virtual void pushGrad(double seed[]);
+    virtual void pushGrad(float seed[]);
     AD(std::string _name, unsigned int _rows, unsigned int _cols);
 } ;
 
 struct AbstractCol : AD {
-    double* value;
+    float* value;
     AbstractCol(std::string _name, unsigned int _rows);
     ~AbstractCol();
 };
 
 struct Col : AbstractCol {
-   void loadValues(std::valarray<double> newValues);
+   void loadValues(std::valarray<float> newValues);
    Col(std::string _name, unsigned int _rows);
 };
 
 struct Matrix : AD {
-    double* value;
-    void loadValues(std::valarray<double> newValues);
+    float* value;
+    void loadValues(std::valarray<float> newValues);
     Matrix(std::string _name, unsigned int _rows, unsigned int _cols);
     ~Matrix();
 };
@@ -39,7 +39,7 @@ struct MatrixColProduct : AbstractCol {
     Matrix* matrix;
     AbstractCol* col;
     void resetGrad() override;
-    void pushGrad(double seed[]) override;
+    void pushGrad(float seed[]) override;
     void compute() override;
     MatrixColProduct(Matrix* m, AbstractCol* x);
 };
@@ -47,25 +47,25 @@ struct MatrixColProduct : AbstractCol {
 struct ColLeakyReLU : AbstractCol {
     AbstractCol* col;
     void resetGrad() override;
-    void pushGrad(double seed[]) override;
+    void pushGrad(float seed[]) override;
     void compute() override;
     ColLeakyReLU(AbstractCol* _col);
 };
 
 struct Scalar : AbstractCol {
     AbstractCol* col;
-    double scalar;
+    float scalar;
     void resetGrad() override;
-    void pushGrad(double seed[]) override;
+    void pushGrad(float seed[]) override;
     void compute() override;
-    Scalar(AbstractCol* _col, double _scalar);
+    Scalar(AbstractCol* _col, float _scalar);
 };
 
 struct AddCol : AbstractCol {
     AbstractCol* col1;
     AbstractCol* col2;
     void resetGrad() override;
-    void pushGrad(double seed[]) override;
+    void pushGrad(float seed[]) override;
     void compute() override;
     AddCol(AbstractCol* _col1, AbstractCol* _col2);
 };
@@ -74,7 +74,7 @@ struct InnerProduct : AbstractCol {
     AbstractCol* col1;
     AbstractCol* col2;
     void resetGrad() override;
-    void pushGrad(double seed[]) override;
+    void pushGrad(float seed[]) override;
     void compute() override;
     InnerProduct(AbstractCol* _col1, AbstractCol* _col2);
 };
