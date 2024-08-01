@@ -93,6 +93,19 @@ void MatrixColProduct::resetGrad() {
 
 }
 
+//__global__
+//void doMatrixColProductGrad( float* colGrad
+//                           , float* matGrad
+//                           , float* seed
+//                           , float* A
+//                           , float* B ) {
+//    int row = blockIdx.y * blockDim.y + threadIdx.y;
+//    int col = blockIdx.x * blockDim.x + threadIdx.x;
+//    int index = col + Acols * row;
+//    matGrad[index] = seed[row] * B[col];
+//    colGrad[col] += seed[row] * A[index]; 
+//}
+
 void MatrixColProduct::pushGrad(float seed[]) {
     // assert len(seed) == this->matrix->rows
 
@@ -185,19 +198,54 @@ void ColLeakyReLU::pushGrad(float seed[]) {
 }
 
 
+__global__
+void doLeakyReLU( int Arows
+                , int Acols
+                , float* grad
+                , float* A ) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( (row < Arows) && (col < Acols)) {
+        int i = row * Acols + col;
+        if (A[i] > 0) {
+            grad[i] = 1;
+        }else {
+            A[i] = 0.01 * A[i];
+            grad[i] = 0.01;
+        }
+    }
+}
+
 void ColLeakyReLU::compute() {
     this->col->compute();
 
-    for(int i {0}; i<this->col->rows; i++) {
-        if(*(this->col->value + i) > 0) {
-            *(this->value +i) = *(this->col->value +i);
-            *(this->grad + i) = 1;
-        } else {
-            *(this->value +i) = 0.01 * *(this->col->value +i);
-            *(this->grad + i) = 0.01;
-        }
-    }
+    delete [] this->value;
+    delete [] this->grad;
 
+    float *A, *A_grad;
+
+    int size = this->col->rows * sizeof(float);
+
+    cudaMalloc((void**) &A, size);
+    cudaMalloc((void**) &A_grad, size);
+
+    cudaMemcpy(A, this->col->value, size, cudaMemcpyHostToDevice);
+
+    dim3 bd (1, 1024, 1);
+    dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
+
+    doLeakyReLU<<<gd, bd>>>( this->col->rows, 1, A_grad, A);
+
+    cudaDeviceSynchronize();
+
+    this->value = new float[this->col->rows];
+    this->grad = new float[this->col->rows];
+
+    cudaMemcpy(this->value, A, size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(this->grad, A_grad, size, cudaMemcpyDeviceToHost);
+
+    cudaFree(A);
+    cudaFree(A_grad);
 
 }
 
@@ -220,12 +268,38 @@ void Scalar::pushGrad(float seed[]) {
     this->col->pushGrad(newSeed);
 }
 
+__global__ void doScale( int Arows, int Acols, float* A, float scalar) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( (row < Arows) && (col < Acols)) {
+        int i = row * Acols + col;
+        A[i] *= scalar;
+    }
+}
+
 void Scalar::compute() {
     this->col->compute();
 
-    for(int i {0}; i<this->col->rows; i++) {
-        *(this->value +i) = this->scalar * *(this->col->value +i);
-    }
+    delete [] this->value;
+
+    float *A;
+    int size = this->col->rows * sizeof(float);
+
+    cudaMalloc((void**) &A, size);
+
+    cudaMemcpy(A, this->col->value, size, cudaMemcpyHostToDevice);
+
+    dim3 bd (1, 1024, 1);
+    dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
+
+    doScale<<<gd, bd>>>( this->col->rows, 1, A, this->scalar );
+
+    cudaDeviceSynchronize();
+
+    this->value = new float[this->col->rows];
+    cudaMemcpy(this->value, A, size, cudaMemcpyDeviceToHost);
+
+    cudaFree(A);
 }
 
 Scalar::Scalar(AbstractCol* _col, float _scalar)
@@ -245,14 +319,40 @@ void AddCol::pushGrad(float seed[]) {
     this->col2->pushGrad(seed);
 }
 
+__global__ void doAdd( int Arows, int Acols, float* A, float* B ) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( (row < Arows) && (col < Acols)) {
+        int i = row * Acols + col;
+        A[i] += B[i];
+    }
+}
 
 void AddCol::compute() {
     this->col1->compute();
     this->col2->compute();
 
-    for(int i {0}; i< this->col1->rows;i++) {
-        *(this->value + i) = this->col1->value[i] + this->col2->value[i];
-    }
+    delete [] this->value;
+
+    float *A, *B;
+    int size = this->col1->rows * sizeof(float);
+
+    cudaMalloc((void**) &A, size);
+    cudaMalloc((void**) &B, size);
+    cudaMemcpy(A, this->col1->value, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(B, this->col2->value, size, cudaMemcpyHostToDevice);
+
+    dim3 bd (1, 1024, 1);
+    dim3 gd (1, ceil((this->col1->rows)/1024.0), 1);
+
+    doAdd<<<gd, bd>>>( this->col1->rows, 1, A, B );
+
+    this->value = new float[this->col1->rows];
+    cudaMemcpy(this->value, A, size, cudaMemcpyDeviceToHost);
+
+    cudaFree(A);
+    cudaFree(B);
+
 
 }
 
