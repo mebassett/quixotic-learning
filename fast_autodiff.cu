@@ -30,15 +30,19 @@ AD::AD(string _name, unsigned int _rows, unsigned int _cols)
 
 AbstractCol::AbstractCol(string _name, unsigned int _rows)
     : AD(_name, _rows, 1) {
-    cudaMallocManaged(&this->value, _rows * sizeof(float));
-    cudaMallocManaged(&this->grad, _rows * sizeof(float));
+    this->value = new float[_rows];
+    this->grad = new float[_rows];
+    //cudaMallocManaged(&this->value, _rows * sizeof(float));
+    //cudaMallocManaged(&this->grad, _rows * sizeof(float));
     for(int i {0}; i<_rows; i++)
         *(this->grad+i) = 0;
 }
 
 AbstractCol::~AbstractCol() {
-    cudaFree(this->value);
-    cudaFree(this->grad);
+    //cudaFree(this->value);
+    //cudaFree(this->grad);
+    delete [] this->value;
+    delete [] this->grad;
 }
 
 void Col::loadValues(valarray<float> newValues) {
@@ -66,16 +70,20 @@ void Matrix::loadValues(valarray<float> newValues) {
 
 Matrix::Matrix(string _name, unsigned int _rows, unsigned int _cols)
     : AD(_name, _rows, _cols) {
-    cudaMallocManaged(&this->value, _rows * _cols * sizeof(float));
-    cudaMallocManaged(&this->grad, _rows * _cols * sizeof(float));
+    this->value = new float[_rows * _cols];
+    this->grad = new float[_rows * _cols];
+    //cudaMallocManaged(&this->value, _rows * _cols * sizeof(float));
+    //cudaMallocManaged(&this->grad, _rows * _cols * sizeof(float));
     for(int i {0}; i<_rows*_cols; i++)
         *(this->grad+i) = 0;
 
 }
 
 Matrix::~Matrix() {
-    cudaFree(this->value);
-    cudaFree(this->grad);
+    //cudaFree(this->value);
+    //cudaFree(this->grad);
+    delete [] this->value;
+    delete [] this->grad;
 }
 
 void MatrixColProduct::resetGrad() {
@@ -123,16 +131,37 @@ void doMatrixProduct( int Arows // Acols = Brows
 }
 
 void MatrixColProduct::compute() {
-    matrix->compute();
-    col->compute();
+    this->matrix->compute();
+    this->col->compute();
+    delete [] this->value;
+
+    float *A, *B, *result;
+    int matrix_size = this->matrix->cols * this->matrix->rows * sizeof(float);
+    int col_size = this->col->rows * sizeof(float);
+
+    cudaMalloc((void**) &A, matrix_size);
+    cudaMalloc((void**) &B, col_size);
+    cudaMalloc((void**) &result, col_size);
+
+    cudaMemcpy(A, this->matrix->value, matrix_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(B, this->col->value, col_size, cudaMemcpyHostToDevice);
+    
 
     dim3 bd(1, 1024, 1);
     dim3 gd(1, ceil((this->col->rows)/1024.0), 1);
 
-    doMatrixProduct<<<gd, bd>>>( this->matrix->rows, this->matrix->cols, 1
-                            , this->value, this->matrix->value, this->col->value);
 
+    doMatrixProduct<<<gd, bd>>>( this->matrix->rows, this->matrix->cols, 1
+                               , result, A, B);
     cudaDeviceSynchronize();
+
+    this->value = new float[this->col->rows];
+    cudaMemcpy(this->value, result, col_size, cudaMemcpyDeviceToHost);
+
+    cudaFree(A);
+    cudaFree(B);
+    cudaFree(result);
+
 
 }
 
