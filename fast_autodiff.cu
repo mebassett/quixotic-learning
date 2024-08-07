@@ -6,76 +6,128 @@ using namespace std;
 
 namespace FA {
 
-
-void AD::resetGrad() {
-    for(int i {0}; i< this->rows * this->cols; i++)
-        *(this->grad+i) = 0;
+__global__ void doAdd( int Arows, int Acols, float* result, float* A, float* B ) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( (row < Arows) && (col < Acols)) {
+        int i = row * Acols + col;
+        result[i] = A[i] + B[i];
+    }
 }
 
-void AD::pushGrad(float seed[]) {
-    for(int i {0}; i< this->rows * this->cols; i++)
-        *(this->grad + i) += seed[i];
+__global__ void doScale( int Arows, int Acols, float* result, float* A, float scalar) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( (row < Arows) && (col < Acols)) {
+        int i = row * Acols + col;
+        result[i] = A[i] * scalar;
+    }
 }
+
+
 
 void AD::compute() {}
 
 AD::AD(string _name, unsigned int _rows, unsigned int _cols)
     : name(_name)
     , rows(_rows)
-    , cols(_cols)
-{}
+    , cols(_cols) {
+    cudaMalloc((void**) &this->d_grad, _rows * _cols * sizeof(float));
+
+}
 
 
     
+void AD::resetGrad() {
+    cudaMemset(this->d_grad, 0.0, this->rows*sizeof(float));
+}
+
+void AD::pushGrad(float* d_seed) {
+    cudaError_t err;
+
+    dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
+    dim3 bd(32, 32, 1);
+
+    doAdd<<<gd, bd>>>( this->rows, this->cols, this->d_grad, this->d_grad, d_seed );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in AD pushGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+}
 
 AbstractCol::AbstractCol(string _name, unsigned int _rows)
     : AD(_name, _rows, 1) {
-    this->value = new float[_rows];
-    this->grad = new float[_rows];
+    int size = _rows * sizeof(float);
+    cudaMalloc((void**) &this->d_value, size);
     //cudaMallocManaged(&this->value, _rows * sizeof(float));
     //cudaMallocManaged(&this->grad, _rows * sizeof(float));
-    for(int i {0}; i<_rows; i++)
-        *(this->grad+i) = 0;
 }
 
 AbstractCol::~AbstractCol() {
     //cudaFree(this->value);
     //cudaFree(this->grad);
-    delete [] this->value;
-    delete [] this->grad;
+    cudaFree(this->d_value);
+    cudaFree(this->d_grad);
 }
 
 void Col::loadValues(valarray<float> newValues) {
     if(newValues.size() != this->rows)
         throw out_of_range("size of col " + this->name + " (" + to_string(this->rows) + ") does not mathc size of valarray (" + to_string(newValues.size()) + ").");
 
-    for(int i {0}; i< newValues.size();i++)
-        *(this->value + i) = newValues[i];
+    cudaMemcpy(this->d_value, &(newValues[0]), this->rows * sizeof(float), cudaMemcpyHostToDevice);
+
 }
 
 Col::Col(string _name, unsigned int _rows)
     : AbstractCol(_name, _rows){
 }
 
+__global__
+void doGradDescent( float learningRate, int matrixCols, int matrixRows, float* matrix, float* grad) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( (row < matrixRows) && (col < matrixCols)){
+        int index = col + matrixCols * row;
+        matrix[index] = matrix[index] - (learningRate * grad[index]);
+    }
 
+
+}
+void Matrix::gradDescent(float learningRate) {
+    cudaError_t err;
+
+    dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
+    dim3 bd(32, 32, 1);
+    doGradDescent<<< gd, bd >>> (learningRate, this->cols, this->rows, this->d_value, this->d_grad);
+
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in Matrix::gradDescent: %s - %s\n", 
+                cudaGetErrorName(err),
+                cudaGetErrorString(err));
+        exit(1);
+    }
+
+    cudaDeviceSynchronize();
+}
 
 void Matrix::loadValues(valarray<float> newValues) {
     if(newValues.size() != this->rows * this->cols)
         throw out_of_range("size of matrix " + this->name + " (" + to_string(this->rows * this->cols) + ") does not match size of valarray (" + to_string(newValues.size()) + ").");
+    
+    int size = this->rows * this->cols * sizeof(float);
 
-    for(int i {0}; i< newValues.size();i++)
-        *(this->value + i) = newValues[i];
+    cudaMemcpy(this->d_value, &(newValues[0]), size, cudaMemcpyHostToDevice);
+
 }
 
 
 Matrix::Matrix(string _name, unsigned int _rows, unsigned int _cols)
     : AD(_name, _rows, _cols) {
-    this->value = new float[_rows * _cols];
-    this->grad = new float[_rows * _cols];
-    //cudaMallocManaged(&this->value, _rows * _cols * sizeof(float));
-    //cudaMallocManaged(&this->grad, _rows * _cols * sizeof(float));
-    for(int i {0}; i<_rows*_cols; i++)
-        *(this->grad+i) = 0;
+    int size = _cols * _rows * sizeof(float);
+    cudaMalloc((void**) &this->d_value, size);
 
 }
 
@@ -83,14 +135,25 @@ Matrix::~Matrix() {
     //cudaFree(this->value);
     //cudaFree(this->grad);
     delete [] this->value;
-    delete [] this->grad;
+    cudaFree(this->d_value);
+    cudaFree(this->d_grad);
 }
 
 void MatrixColProduct::resetGrad() {
-    AD::resetGrad();
+    AbstractCol::resetGrad();
     this->matrix->resetGrad();
     this->col->resetGrad();
 
+}
+
+void MatrixColProduct::fromDevice() {
+    cudaError_t err;
+    int size = this->rows * sizeof(float);
+    err = cudaMemcpy(this->value, this->d_value, size, cudaMemcpyDeviceToHost);
+    if(err != cudaSuccess) {
+        printf("cudaMemcpy failed at MatrixColProduct::fromDevice: %s\n", cudaGetErrorName(err));
+        exit(1);
+    }
 }
 
 //__global__
@@ -105,22 +168,47 @@ void MatrixColProduct::resetGrad() {
 //    matGrad[index] = seed[row] * B[col];
 //    colGrad[col] += seed[row] * A[index]; 
 //}
+__global__
+void doMatrixColGrad( int matrixCols
+                    , int matrixRows
+                    , float* matrix
+                    , float* column
+                    , float* d_seed
+                    , float* matrixGrad) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( (row < matrixRows) && (col < matrixCols)) {
+        int index = col + matrixCols * row;
+        matrixGrad[index] = d_seed[row] * column[col];
+    }
 
-void MatrixColProduct::pushGrad(float seed[]) {
+}
+
+void MatrixColProduct::pushGrad(float* d_seed) {
     // assert len(seed) == this->matrix->rows
 
-    int size = this->matrix->rows * this->matrix->cols;
-    float matGrad[size];
-    float colGrad[this->col->rows] = {0};
-    for(int i {0}; i< this->matrix->rows; i++){
-        for(int j {0}; j< this->matrix->cols; j++) {
-            int index = j + this->matrix->cols * i;
-            matGrad[index] = seed[i] * *(this->col->value + j);
-            colGrad[j] += seed[i] * *(this->matrix->value + index);
-        }
+    int size = this->matrix->rows * this->matrix->cols * sizeof(float);
+    float* matrixGrad;
+    cudaError_t err;
+
+    cudaMalloc((void**) &matrixGrad, size);
+
+    dim3 gd(ceil(this->matrix->cols/32.0), ceil(this->matrix->rows/32.0), 1);
+    dim3 bd(32, 32, 1);
+
+    doMatrixColGrad<<< gd, bd>>>( this->matrix->cols, this->matrix->rows 
+                                , this->matrix->d_value
+                                , this->col->d_value, d_seed, matrixGrad );
+
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error MatrixColProduct::pushGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
     }
-    this->matrix->pushGrad(matGrad);
-    this->col->pushGrad(colGrad);
+    cudaDeviceSynchronize();
+
+    this->matrix->pushGrad(matrixGrad);
+    //this->col->pushGrad(colGrad);
 
 
 }
@@ -146,34 +234,25 @@ void doMatrixProduct( int Arows // Acols = Brows
 void MatrixColProduct::compute() {
     this->matrix->compute();
     this->col->compute();
-    delete [] this->value;
-
-    float *A, *B, *result;
-    int matrix_size = this->matrix->cols * this->matrix->rows * sizeof(float);
-    int col_size = this->col->rows * sizeof(float);
-
-    cudaMalloc((void**) &A, matrix_size);
-    cudaMalloc((void**) &B, col_size);
-    cudaMalloc((void**) &result, col_size);
-
-    cudaMemcpy(A, this->matrix->value, matrix_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(B, this->col->value, col_size, cudaMemcpyHostToDevice);
-    
+    cudaError_t err;
 
     dim3 bd(1, 1024, 1);
     dim3 gd(1, ceil((this->col->rows)/1024.0), 1);
 
 
     doMatrixProduct<<<gd, bd>>>( this->matrix->rows, this->matrix->cols, 1
-                               , result, A, B);
-    cudaDeviceSynchronize();
-
-    this->value = new float[this->col->rows];
-    cudaMemcpy(this->value, result, col_size, cudaMemcpyDeviceToHost);
-
-    cudaFree(A);
-    cudaFree(B);
-    cudaFree(result);
+                               , this->d_value, this->matrix->d_value
+                               , this->col->d_value);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in MatrixColProduct::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaDeviceSynchronize();
+    if(err != cudaSuccess) {
+        printf("sync error in MatrixColProduct::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
 
 
 }
@@ -182,6 +261,11 @@ MatrixColProduct::MatrixColProduct(Matrix* m, AbstractCol* x)
     : AbstractCol("Matrix product of " + m->name + " and " + x->name, m->rows)
     , matrix(m)
     , col(x) {
+    this->value = new float[x->rows];
+}
+
+MatrixColProduct::~MatrixColProduct() {
+    delete [] this->value;
 }
 
 void ColLeakyReLU::resetGrad() {
@@ -189,11 +273,35 @@ void ColLeakyReLU::resetGrad() {
     this->col->resetGrad();
 }
 
-void ColLeakyReLU::pushGrad(float seed[]) {
-    float newSeed[this->col->rows];
-    for(int i {0}; i< this->col->rows; i++)
-        newSeed[i] = seed[i] * *(this->grad + i);
-    
+__global__
+void doComponentProduct( int rows
+                       , float* grad
+                       , float* seed
+                       , float* result ) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    if( row < rows) {
+        result[row] = seed[row] * grad[row];
+    }
+
+}
+
+void ColLeakyReLU::pushGrad(float* d_seed) {
+    float* newSeed;
+    cudaError_t err;
+
+    cudaMalloc((void**) &newSeed, this->rows * sizeof(float));
+
+    dim3 bd(1, 1024, 1);
+    dim3 gd(1, ceil((this->col->rows)/1024.0), 1);
+
+    doComponentProduct<<<gd, bd>>>(this->rows, this->d_grad, d_seed, newSeed);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in ColLeakyReLU::pushGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    cudaDeviceSynchronize();
+
     this->col->pushGrad(newSeed);
 }
 
@@ -218,34 +326,20 @@ void doLeakyReLU( int Arows
 
 void ColLeakyReLU::compute() {
     this->col->compute();
-
-    delete [] this->value;
-    delete [] this->grad;
-
-    float *A, *A_grad;
-
-    int size = this->col->rows * sizeof(float);
-
-    cudaMalloc((void**) &A, size);
-    cudaMalloc((void**) &A_grad, size);
-
-    cudaMemcpy(A, this->col->value, size, cudaMemcpyHostToDevice);
+    cudaError_t err;
 
     dim3 bd (1, 1024, 1);
     dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
 
-    doLeakyReLU<<<gd, bd>>>( this->col->rows, 1, A_grad, A);
+    doLeakyReLU<<<gd, bd>>>( this->col->rows, 1, this->d_grad, this->d_value);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in ColLeakyReLU::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
 
     cudaDeviceSynchronize();
 
-    this->value = new float[this->col->rows];
-    this->grad = new float[this->col->rows];
-
-    cudaMemcpy(this->value, A, size, cudaMemcpyDeviceToHost);
-    cudaMemcpy(this->grad, A_grad, size, cudaMemcpyDeviceToHost);
-
-    cudaFree(A);
-    cudaFree(A_grad);
 
 }
 
@@ -259,53 +353,87 @@ void Scalar::resetGrad() {
     this->col->resetGrad();
 }
 
-void Scalar::pushGrad(float seed[]) {
-    float newSeed[this->col->rows];
-
-    for(int i {0}; i< this->col->rows; i++)
-        newSeed[i] = seed[i] * this->scalar;
-    
-    this->col->pushGrad(newSeed);
-}
-
-__global__ void doScale( int Arows, int Acols, float* A, float scalar) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if( (row < Arows) && (col < Acols)) {
-        int i = row * Acols + col;
-        A[i] *= scalar;
+void Scalar::fromDevice() {
+    cudaError_t err;
+    err = cudaMemcpy(this->value, this->d_value, this->col->rows * sizeof(float), cudaMemcpyDeviceToHost);
+    if(err != cudaSuccess) {
+        printf("cudaMemcpy failed at Scalar::fromDevice: %s\n", cudaGetErrorString(err));
+        exit(1);
     }
 }
 
-void Scalar::compute() {
-    this->col->compute();
+void Scalar::computeGrad() {
+    float* seed;
+    cudaError_t err;
+    err = cudaMalloc((void**) &seed, this->col->rows * sizeof(float));
+    if(err != cudaSuccess) {
+        printf("malloc error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaMemset(seed, 1.0, this->col->rows * sizeof(float));
+    if(err != cudaSuccess) {
+        printf("memset error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    
+    this->pushGrad(seed);
+    
+    err = cudaDeviceSynchronize();
+    if(err != cudaSuccess) {
+        printf("sync error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
 
-    delete [] this->value;
+}
 
-    float *A;
-    int size = this->col->rows * sizeof(float);
+void Scalar::pushGrad(float* d_seed) {
+    float *newSeed;
+    cudaError_t err;
 
-    cudaMalloc((void**) &A, size);
-
-    cudaMemcpy(A, this->col->value, size, cudaMemcpyHostToDevice);
+    cudaMalloc((void**) &newSeed, this->col->rows * sizeof(float));
 
     dim3 bd (1, 1024, 1);
     dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
 
-    doScale<<<gd, bd>>>( this->col->rows, 1, A, this->scalar );
+    doScale<<<gd, bd>>>( this->col->rows, 1, newSeed, this->d_value, this->scalar );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in Scalar::pushGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
 
+    this->col->pushGrad(newSeed);
+}
+
+
+void Scalar::compute() {
+    this->col->compute();
+    cudaError_t err;
+
+
+    dim3 bd (1, 1024, 1);
+    dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
+
+    doScale<<<gd, bd>>>( this->col->rows, 1, this->d_value, this->col->d_value, this->scalar );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in Scalar::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
     cudaDeviceSynchronize();
 
-    this->value = new float[this->col->rows];
-    cudaMemcpy(this->value, A, size, cudaMemcpyDeviceToHost);
 
-    cudaFree(A);
 }
 
 Scalar::Scalar(AbstractCol* _col, float _scalar)
     : col(_col)
     , scalar(_scalar)
     , AbstractCol( "Scalar of (" + _col->name + ") by "+ to_string(_scalar), _col->rows) {
+    this->value = new float[_col->rows];
+}
+
+Scalar::~Scalar() {
+    delete [] this->value;
 }
 
 void AddCol::resetGrad() {
@@ -314,44 +442,29 @@ void AddCol::resetGrad() {
     this->col2->resetGrad();
 }
 
-void AddCol::pushGrad(float seed[]) {
-    this->col1->pushGrad(seed);
-    this->col2->pushGrad(seed);
+void AddCol::pushGrad(float* d_seed) {
+    this->col1->pushGrad(d_seed);
+    this->col2->pushGrad(d_seed);
 }
 
-__global__ void doAdd( int Arows, int Acols, float* A, float* B ) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if( (row < Arows) && (col < Acols)) {
-        int i = row * Acols + col;
-        A[i] += B[i];
-    }
-}
 
 void AddCol::compute() {
     this->col1->compute();
     this->col2->compute();
+    cudaError_t err;
 
-    delete [] this->value;
-
-    float *A, *B;
-    int size = this->col1->rows * sizeof(float);
-
-    cudaMalloc((void**) &A, size);
-    cudaMalloc((void**) &B, size);
-    cudaMemcpy(A, this->col1->value, size, cudaMemcpyHostToDevice);
-    cudaMemcpy(B, this->col2->value, size, cudaMemcpyHostToDevice);
 
     dim3 bd (1, 1024, 1);
     dim3 gd (1, ceil((this->col1->rows)/1024.0), 1);
 
-    doAdd<<<gd, bd>>>( this->col1->rows, 1, A, B );
+    doAdd<<<gd, bd>>>( this->col1->rows, 1, this->d_value, this->col1->d_value, this->col2->d_value );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in AddCol::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    cudaDeviceSynchronize();
 
-    this->value = new float[this->col1->rows];
-    cudaMemcpy(this->value, A, size, cudaMemcpyDeviceToHost);
-
-    cudaFree(A);
-    cudaFree(B);
 
 
 }
@@ -368,33 +481,87 @@ void InnerProduct::resetGrad() {
     this->col2->resetGrad();
 }
 
-void InnerProduct::pushGrad(float seed[]) {
+void InnerProduct::pushGrad(float* d_seed) {
     // assume len(seed)=1 here...
-    float vec1[this->col1->rows];
-    float vec2[this->col2->rows];
+    float* vec1;
+    float* vec2;
+    float* scalar = new float;
+    cudaError_t err;
 
-    for(int i {0}; i< this->col1->rows; i++)
-        vec1[i] = seed[0] * *(this->col1->value + i);
+    cudaMemcpy(scalar, d_seed, sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaMalloc((void**) &vec1, this->col1->rows * sizeof(float));
+
+    cudaMalloc((void**) &vec2, this->col2->rows * sizeof(float));
+
+    dim3 bd (1, 1024, 1);
+    dim3 gd (1, ceil((this->col1->rows)/1024.0), 1);
+    doScale<<<gd, bd>>>( this->col1->rows, 1, vec1, this->col1->d_value, *scalar );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error InnerProduct::pushGrad (col1): %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    doScale<<<gd, bd>>>( this->col1->rows, 1, vec2, this->col2->d_value, *scalar );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error InnerProduct::pushGrad (col2): %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    err = cudaDeviceSynchronize();
+    if(err != cudaSuccess) {
+        printf("sync error InnerProduct::pushGrad (col2): %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
     
     this->col2->pushGrad(vec1);
-
-    for(int i {0}; i< this->col2->rows; i++)
-        vec2[i] = seed[0] * *(this->col2->value + i);
-    
     this->col1->pushGrad(vec2);
+
+    delete scalar;
 }
 
+__global__
+void doSingleSum(int rows, float* arr, float* result) {
+    float sum = 0;
+    for(int i {0} ; i < rows; i++) {
+        sum += arr[i];
+    }
+    *result = sum;
+}
 
 void InnerProduct::compute() {
     this->col1->compute();
     this->col2->compute();
 
-    float sum = 0;
+    float* product;
+    cudaError_t err;
 
-    for(int i {0}; i< this->col1->rows;i++) {
-        sum += this->col1->value[i] * this->col2->value[i];
+    cudaMalloc((void**) &product, this->col1->rows * sizeof(float));
+
+    dim3 bd(1, 1024, 1);
+    dim3 gd(1, ceil((this->col1->rows)/1024.0), 1);
+
+
+    doComponentProduct<<<gd, bd>>>(this->col1->rows, this->col1->d_value
+                                  , this->col2->d_value, product);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error InnerProduct::compute (component): %s\n", cudaGetErrorString(err));
+        exit(1);
     }
-    *(this->value) = sum;
+    err = cudaDeviceSynchronize();
+    if(err != cudaSuccess) {
+        printf("InnerProduct::compute could not sync device: %s\n", cudaGetErrorName(err));
+        exit(1);
+    }
+
+    doSingleSum<<<1, 1>>>(this->col1->rows, product, this->d_value);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error InnerProduct::compute(sum): %s - %s \n", cudaGetErrorName(err), cudaGetErrorString(err));
+        exit(1);
+    }
+    cudaDeviceSynchronize();
 
 }
 

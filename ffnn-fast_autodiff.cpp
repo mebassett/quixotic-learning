@@ -19,11 +19,16 @@ void initialize_weights(Matrix* m1, Matrix* m2, float lower_bound, float upper_b
     uniform_real_distribution<> dis(lower_bound, upper_bound);
     auto get_rand = [&](){ return dis(rd); } ;
 
+    valarray<float> m1Weights (m1->rows * m1->cols);
+
     for(int i {0}; i < m1->rows * m1->cols; i++)
-        *(m1->value+i) = get_rand();
+        m1Weights = get_rand();
+    m1->loadValues(m1Weights);
     
+    valarray<float> m2Weights (m2->rows * m2->cols);
     for(int i {0}; i < m2->rows * m2->cols; i++)
-        *(m2->value+i) = get_rand();
+        m2Weights = get_rand();
+    m2->loadValues(m2Weights);
 }
 
 int fromModelOutput(float* out) {
@@ -37,8 +42,12 @@ int fromModelOutput(float* out) {
 int main() {
      float learningRate = 0.025;
 
+
      Matrix* w1 = new Matrix ("weight1", NUM_HIDDEN_NODES, INPUT_SIZE);
      Matrix* w2 = new Matrix ("weight2", OUTPUT_SIZE, NUM_HIDDEN_NODES);
+     cout << "hello? \n";
+
+     cout << "init weights...\n";
 
      initialize_weights(w1, w2, -0.05, 0.05);
 
@@ -59,7 +68,6 @@ int main() {
     int trainingExamples = 0;
     float errorRate;
 
-    float seed[1] = { 1.0 };
 
     while(count <= 1) {
 
@@ -71,13 +79,11 @@ int main() {
             targetInput->loadValues(row.t);
 
             errorFunc->compute();
-            errorFunc->pushGrad(seed);
+            errorFunc->computeGrad();
 
-            for(int i {0}; i < w1->rows * w1->cols; i++)
-                *(w1->value + i) = *(w1->value + i) - (learningRate * *(w1->grad + i));
+            w1->gradDescent(learningRate);
+            w2->gradDescent(learningRate);
 
-            for(int i {0}; i < w2->rows * w2->cols; i++)
-                *(w2->value + i) = *(w2->value + i) - (learningRate * *(w2->grad + i));
 
             trainingExamples++;
             if(trainingExamples % 10000 == 0)
@@ -92,6 +98,8 @@ int main() {
             targetInput->loadValues(row.t);
 
             errorFunc->compute();
+            errorFunc->fromDevice();
+            predictor->fromDevice();
 
             int out = fromModelOutput(predictor->value);
             errorRate += *(errorFunc->value);
