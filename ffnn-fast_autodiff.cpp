@@ -45,7 +45,6 @@ int main() {
 
      Matrix* w1 = new Matrix ("weight1", NUM_HIDDEN_NODES, INPUT_SIZE);
      Matrix* w2 = new Matrix ("weight2", OUTPUT_SIZE, NUM_HIDDEN_NODES);
-     cout << "hello? \n";
 
      cout << "init weights...\n";
 
@@ -68,24 +67,24 @@ int main() {
     int trainingExamples = 0;
     float errorRate;
 
-        numRight = 0;
-        errorRate = 0.0;
-        trainingExamples = 0;
-        for (auto row: testRows){
-            featureInput->loadValues(row.x);
-            targetInput->loadValues(row.t);
+    numRight = 0;
+    errorRate = 0.0;
+    trainingExamples = 0;
+    for (auto row: testRows){
+        featureInput->loadValues(row.x);
+        targetInput->loadValues(row.t);
 
-            errorFunc->compute();
-            errorFunc->fromDevice();
-            predictor->fromDevice();
+        errorFunc->compute();
+        errorFunc->fromDevice();
+        predictor->fromDevice();
 
-            int out = fromModelOutput(predictor->value);
+        int out = fromModelOutput(predictor->value);
 
-            errorRate += *(errorFunc->value);
-            if(out == row.y) numRight++;
-        }
-        cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
-        cout << "model error on test set:" << errorRate << " .\n";
+        errorRate += *(errorFunc->value);
+        if(out == row.y) numRight++;
+    }
+    cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
+    cout << "model error on test set:" << errorRate << " .\n";
 
     while(count <= 1) {
 

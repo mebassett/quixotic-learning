@@ -176,7 +176,6 @@ void Matrix::loadValues(valarray<float> newValues) {
 
 Matrix::Matrix(string _name, unsigned int _rows, unsigned int _cols)
     : AD(_name, _rows, _cols) {
-    cout << "Calling Matrix Constructor\n";
 
 }
 

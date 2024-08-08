@@ -69,6 +69,7 @@ int main() {
     cout << "Matrix grad\n"
          << matrixGrad[0] << ", " << matrixGrad[1] << "\n" 
          << matrixGrad[2] << ", " << matrixGrad[3] << "\n";
+    delete matrixGrad;
 
     xy->fromDevice();
 
@@ -90,6 +91,31 @@ int main() {
 
     cout << relu->value[0] << ", " << relu->value[1] << ", " << relu->value[2] << ", " << relu->value[3]
          << "\n";
+
+    cout << "some Grad tests...\n";
+
+    Col* x = new Col("x",1);
+    InnerProduct* f = new InnerProduct(x, x);
+
+    x->loadValues({3});
+    f->compute();
+    f->computeGrad();
+    
+    float* grad = new float;
+    cudaMemcpy(grad, x->d_grad, sizeof(float), cudaMemcpyDeviceToHost);
+    cout << "I'm expecting that d/dx (x^2) at x=3 is 6, but I computed: " << *grad << ".\n";
+    f->resetGrad();
+
+    x->loadValues({9});
+    f->compute();
+    f->computeGrad();
+    
+    cudaMemcpy(grad, x->d_grad, sizeof(float), cudaMemcpyDeviceToHost);
+    cout << "I'm expecting that d/dx (x^2) at x=9 is 18, but I computed: " << *grad << ".\n";
+
+    delete grad;
+
+
 
 
 
