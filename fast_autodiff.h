@@ -36,7 +36,6 @@ struct Matrix : AD {
     void loadValues(std::valarray<float> newValues);
     void gradDescent(float learningRate);
     Matrix(std::string _name, unsigned int _rows, unsigned int _cols);
-    ~Matrix();
 };
 
 struct MatrixColProduct : AbstractCol {
@@ -46,7 +45,7 @@ struct MatrixColProduct : AbstractCol {
     void pushGrad(float* d_seed) override;
     void compute() override;
     MatrixColProduct(Matrix* m, AbstractCol* x);
-    ~MatrixColProduct();
+    ~MatrixColProduct() override;
 };
 
 struct ColLeakyReLU : AbstractCol {
@@ -55,6 +54,8 @@ struct ColLeakyReLU : AbstractCol {
     void pushGrad(float* d_seed) override;
     void compute() override;
     ColLeakyReLU(AbstractCol* _col);
+    ~ColLeakyReLU() override;
+
 };
 
 struct Scalar : AbstractCol {
@@ -64,7 +65,7 @@ struct Scalar : AbstractCol {
     void pushGrad(float* d_seed) override;
     void compute() override;
     Scalar(AbstractCol* _col, float _scalar);
-    ~Scalar();
+    ~Scalar() override;
 };
 
 struct AddCol : AbstractCol {
@@ -74,6 +75,7 @@ struct AddCol : AbstractCol {
     void pushGrad(float* d_seed) override;
     void compute() override;
     AddCol(AbstractCol* _col1, AbstractCol* _col2);
+    ~AddCol() override;
 };
 
 struct InnerProduct : AbstractCol {
@@ -83,6 +85,7 @@ struct InnerProduct : AbstractCol {
     void pushGrad(float* d_seed) override;
     void compute() override;
     InnerProduct(AbstractCol* _col1, AbstractCol* _col2);
+    ~InnerProduct() override;
 };
 
 }

@@ -131,4 +131,6 @@ int main() {
 
     }
 
+    delete errorFunc;
+
 }

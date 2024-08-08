@@ -176,18 +176,10 @@ void Matrix::loadValues(valarray<float> newValues) {
 
 Matrix::Matrix(string _name, unsigned int _rows, unsigned int _cols)
     : AD(_name, _rows, _cols) {
-    int size = _cols * _rows * sizeof(float);
-    cudaMalloc((void**) &this->d_value, size);
+    cout << "Calling Matrix Constructor\n";
 
 }
 
-Matrix::~Matrix() {
-    //cudaFree(this->value);
-    //cudaFree(this->grad);
-    delete [] this->value;
-    cudaFree(this->d_value);
-    cudaFree(this->d_grad);
-}
 
 void MatrixColProduct::resetGrad() {
     AD::resetGrad();
@@ -306,7 +298,8 @@ MatrixColProduct::MatrixColProduct(Matrix* m, AbstractCol* x)
 }
 
 MatrixColProduct::~MatrixColProduct() {
-    delete [] this->value;
+    delete this->matrix;
+    delete this->col;
 }
 
 void ColLeakyReLU::resetGrad() {
@@ -392,6 +385,10 @@ ColLeakyReLU::ColLeakyReLU(AbstractCol* _col)
     , AbstractCol( "ReLU of " + _col->name, _col->rows) {
 }
 
+ColLeakyReLU::~ColLeakyReLU() {
+    delete this->col;
+}
+
 void Scalar::resetGrad() {
     AD::resetGrad();
     this->col->resetGrad();
@@ -443,12 +440,12 @@ Scalar::Scalar(AbstractCol* _col, float _scalar)
     : col(_col)
     , scalar(_scalar)
     , AbstractCol( "Scalar of (" + _col->name + ") by "+ to_string(_scalar), _col->rows) {
-    this->value = new float[_col->rows];
 }
 
 Scalar::~Scalar() {
-    delete [] this->value;
+    delete this->col;
 }
+
 
 void AddCol::resetGrad() {
     AD::resetGrad();
@@ -490,6 +487,15 @@ AddCol::AddCol(AbstractCol* _col1, AbstractCol* _col2)
     : col1(_col1)
     , col2(_col2)
     , AbstractCol("Sum of (" + _col1->name + ") and (" + _col2->name + ")", _col1->rows) {
+}
+
+AddCol::~AddCol() {
+    if( this->col1 == this->col2) {
+        delete this->col1;
+    } else {
+        delete this->col1;
+        delete this->col2;
+    }
 }
 
 void InnerProduct::resetGrad() {
@@ -580,6 +586,7 @@ void InnerProduct::compute() {
         exit(1);
     }
     cudaDeviceSynchronize();
+    cudaFree(product);
 
 }
 
@@ -587,6 +594,15 @@ InnerProduct::InnerProduct(AbstractCol* _col1, AbstractCol* _col2)
     : col1(_col1)
     , col2(_col2)
     , AbstractCol("Inner Product of (" + _col1->name + ") and (" + _col2->name + ")", 1) {
+}
+
+InnerProduct::~InnerProduct() {
+    if( this->col1 == this->col2) {
+        delete this->col1;
+    } else {
+        delete this->col1;
+        delete this->col2;
+    }
 }
 
 }
