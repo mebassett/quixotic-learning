@@ -11,16 +11,20 @@ struct AD {
     unsigned int rows;
     unsigned int cols;
     float* d_grad;
+    float* d_value;
+    float* value;
+    virtual void fromDevice();
     virtual void compute();
     virtual void resetGrad();
     virtual void pushGrad(float* seed);
+    void computeGrad();
     AD(std::string _name, unsigned int _rows, unsigned int _cols);
+    virtual ~AD();
 } ;
 
+
 struct AbstractCol : AD {
-    float* d_value;
     AbstractCol(std::string _name, unsigned int _rows);
-    virtual ~AbstractCol();
 };
 
 struct Col : AbstractCol {
@@ -29,8 +33,6 @@ struct Col : AbstractCol {
 };
 
 struct Matrix : AD {
-    float* value;
-    float* d_value;
     void loadValues(std::valarray<float> newValues);
     void gradDescent(float learningRate);
     Matrix(std::string _name, unsigned int _rows, unsigned int _cols);
@@ -40,11 +42,9 @@ struct Matrix : AD {
 struct MatrixColProduct : AbstractCol {
     Matrix* matrix;
     AbstractCol* col;
-    float* value;
     void resetGrad() override;
     void pushGrad(float* d_seed) override;
     void compute() override;
-    void fromDevice();
     MatrixColProduct(Matrix* m, AbstractCol* x);
     ~MatrixColProduct();
 };
@@ -59,13 +59,10 @@ struct ColLeakyReLU : AbstractCol {
 
 struct Scalar : AbstractCol {
     AbstractCol* col;
-    float* value;
     float scalar;
     void resetGrad() override;
     void pushGrad(float* d_seed) override;
     void compute() override;
-    void fromDevice();
-    void computeGrad();
     Scalar(AbstractCol* _col, float _scalar);
     ~Scalar();
 };

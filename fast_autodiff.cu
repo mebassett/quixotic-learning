@@ -32,14 +32,66 @@ AD::AD(string _name, unsigned int _rows, unsigned int _cols)
     : name(_name)
     , rows(_rows)
     , cols(_cols) {
+    cudaMalloc((void**) &this->d_value, _rows * _cols * sizeof(float));
     cudaMalloc((void**) &this->d_grad, _rows * _cols * sizeof(float));
+    this->value = new float[_rows * _cols];
+    this->resetGrad();
 
+}
+
+void AD::fromDevice() {
+    cudaError_t err;
+    int size = this->rows * this->cols * sizeof(float);
+    err = cudaMemcpy(this->value, this->d_value, size, cudaMemcpyDeviceToHost);
+    if(err != cudaSuccess) {
+        printf("cudaMemcpy failed at AD(%s)::fromDevice: %s\n", this->name, cudaGetErrorName(err));
+        exit(1);
+    }
+}
+
+__global__ void doFill( int rows, int cols, float value, float* result) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int i = row * cols + col;
+    if( i < rows*cols)
+        result[i] = value;
+}
+void AD::computeGrad() {
+    float* seed;
+    cudaError_t err;
+    int size = this->rows * this->cols * sizeof(float);
+    err = cudaMalloc((void**) &seed, size);
+    if(err != cudaSuccess) {
+        printf("malloc error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+    
+    dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
+    dim3 bd(32, 32, 1);
+    doFill<<<gd, bd>>>( this->rows, this->cols, 1.0f, seed);
+
+
+    
+    this->pushGrad(seed);
+    
+    err = cudaDeviceSynchronize();
+    if(err != cudaSuccess) {
+        printf("sync error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+}
+
+AD::~AD() {
+    cudaFree(this->d_grad);
+    cudaFree(this->d_value);
+    delete [] this->value;
 }
 
 
     
 void AD::resetGrad() {
-    cudaMemset(this->d_grad, 0.0, this->rows*sizeof(float));
+    cudaMemset(this->d_grad, 0.0, this->rows * this->cols * sizeof(float));
 }
 
 void AD::pushGrad(float* d_seed) {
@@ -54,23 +106,14 @@ void AD::pushGrad(float* d_seed) {
         printf("Kernel launch error in AD pushGrad: %s\n", cudaGetErrorString(err));
         exit(1);
     }
+    cudaFree(d_seed);
 
 }
 
 AbstractCol::AbstractCol(string _name, unsigned int _rows)
     : AD(_name, _rows, 1) {
-    int size = _rows * sizeof(float);
-    cudaMalloc((void**) &this->d_value, size);
-    //cudaMallocManaged(&this->value, _rows * sizeof(float));
-    //cudaMallocManaged(&this->grad, _rows * sizeof(float));
 }
 
-AbstractCol::~AbstractCol() {
-    //cudaFree(this->value);
-    //cudaFree(this->grad);
-    cudaFree(this->d_value);
-    cudaFree(this->d_grad);
-}
 
 void Col::loadValues(valarray<float> newValues) {
     if(newValues.size() != this->rows)
@@ -119,7 +162,14 @@ void Matrix::loadValues(valarray<float> newValues) {
     
     int size = this->rows * this->cols * sizeof(float);
 
-    cudaMemcpy(this->d_value, &(newValues[0]), size, cudaMemcpyHostToDevice);
+    cudaError_t err = cudaMemcpy(this->d_value, &(newValues[0]), size, cudaMemcpyHostToDevice);
+    if(err != cudaSuccess) {
+        printf("Matrix::loadValues unable to cudaMemcpy: %s - %s\n", 
+                cudaGetErrorName(err),
+                cudaGetErrorString(err));
+        exit(1);
+    }
+
 
 }
 
@@ -140,21 +190,12 @@ Matrix::~Matrix() {
 }
 
 void MatrixColProduct::resetGrad() {
-    AbstractCol::resetGrad();
+    AD::resetGrad();
     this->matrix->resetGrad();
     this->col->resetGrad();
 
 }
 
-void MatrixColProduct::fromDevice() {
-    cudaError_t err;
-    int size = this->rows * sizeof(float);
-    err = cudaMemcpy(this->value, this->d_value, size, cudaMemcpyDeviceToHost);
-    if(err != cudaSuccess) {
-        printf("cudaMemcpy failed at MatrixColProduct::fromDevice: %s\n", cudaGetErrorName(err));
-        exit(1);
-    }
-}
 
 //__global__
 //void doMatrixColProductGrad( float* colGrad
@@ -209,6 +250,7 @@ void MatrixColProduct::pushGrad(float* d_seed) {
 
     this->matrix->pushGrad(matrixGrad);
     //this->col->pushGrad(colGrad);
+    cudaFree(d_seed);
 
 
 }
@@ -261,7 +303,6 @@ MatrixColProduct::MatrixColProduct(Matrix* m, AbstractCol* x)
     : AbstractCol("Matrix product of " + m->name + " and " + x->name, m->rows)
     , matrix(m)
     , col(x) {
-    this->value = new float[x->rows];
 }
 
 MatrixColProduct::~MatrixColProduct() {
@@ -303,6 +344,7 @@ void ColLeakyReLU::pushGrad(float* d_seed) {
     cudaDeviceSynchronize();
 
     this->col->pushGrad(newSeed);
+    cudaFree(d_seed);
 }
 
 
@@ -310,15 +352,17 @@ __global__
 void doLeakyReLU( int Arows
                 , int Acols
                 , float* grad
-                , float* A ) {
+                , float* A 
+                , float* result) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if( (row < Arows) && (col < Acols)) {
         int i = row * Acols + col;
         if (A[i] > 0) {
             grad[i] = 1;
+            result[i] = A[i];
         }else {
-            A[i] = 0.01 * A[i];
+            result[i] = 0.01 * A[i];
             grad[i] = 0.01;
         }
     }
@@ -331,7 +375,7 @@ void ColLeakyReLU::compute() {
     dim3 bd (1, 1024, 1);
     dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
 
-    doLeakyReLU<<<gd, bd>>>( this->col->rows, 1, this->d_grad, this->d_value);
+    doLeakyReLU<<<gd, bd>>>( this->col->rows, 1, this->d_grad, this->col->d_value, this->d_value);
     err = cudaGetLastError();
     if(err != cudaSuccess) {
         printf("Kernel launch error in ColLeakyReLU::compute: %s\n", cudaGetErrorString(err));
@@ -353,38 +397,7 @@ void Scalar::resetGrad() {
     this->col->resetGrad();
 }
 
-void Scalar::fromDevice() {
-    cudaError_t err;
-    err = cudaMemcpy(this->value, this->d_value, this->col->rows * sizeof(float), cudaMemcpyDeviceToHost);
-    if(err != cudaSuccess) {
-        printf("cudaMemcpy failed at Scalar::fromDevice: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-}
 
-void Scalar::computeGrad() {
-    float* seed;
-    cudaError_t err;
-    err = cudaMalloc((void**) &seed, this->col->rows * sizeof(float));
-    if(err != cudaSuccess) {
-        printf("malloc error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-    err = cudaMemset(seed, 1.0, this->col->rows * sizeof(float));
-    if(err != cudaSuccess) {
-        printf("memset error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-    
-    this->pushGrad(seed);
-    
-    err = cudaDeviceSynchronize();
-    if(err != cudaSuccess) {
-        printf("sync error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-
-}
 
 void Scalar::pushGrad(float* d_seed) {
     float *newSeed;
@@ -395,7 +408,7 @@ void Scalar::pushGrad(float* d_seed) {
     dim3 bd (1, 1024, 1);
     dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
 
-    doScale<<<gd, bd>>>( this->col->rows, 1, newSeed, this->d_value, this->scalar );
+    doScale<<<gd, bd>>>( this->col->rows, 1, newSeed, d_seed, this->scalar );
     err = cudaGetLastError();
     if(err != cudaSuccess) {
         printf("Kernel launch error in Scalar::pushGrad: %s\n", cudaGetErrorString(err));
@@ -403,6 +416,7 @@ void Scalar::pushGrad(float* d_seed) {
     }
 
     this->col->pushGrad(newSeed);
+    cudaFree(d_seed);
 }
 
 
@@ -443,8 +457,11 @@ void AddCol::resetGrad() {
 }
 
 void AddCol::pushGrad(float* d_seed) {
+    float* copySeed ;
+    cudaMalloc((void**) &copySeed, this->col1->rows * sizeof(float));
+    cudaMemcpy(copySeed, d_seed, this->col1->rows * sizeof(float), cudaMemcpyDeviceToDevice);
     this->col1->pushGrad(d_seed);
-    this->col2->pushGrad(d_seed);
+    this->col2->pushGrad(copySeed);
 }
 
 
@@ -518,6 +535,7 @@ void InnerProduct::pushGrad(float* d_seed) {
     this->col1->pushGrad(vec2);
 
     delete scalar;
+    cudaFree(d_seed);
 }
 
 __global__

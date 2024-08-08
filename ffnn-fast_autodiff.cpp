@@ -22,12 +22,12 @@ void initialize_weights(Matrix* m1, Matrix* m2, float lower_bound, float upper_b
     valarray<float> m1Weights (m1->rows * m1->cols);
 
     for(int i {0}; i < m1->rows * m1->cols; i++)
-        m1Weights = get_rand();
+        m1Weights[i] = get_rand();
     m1->loadValues(m1Weights);
     
     valarray<float> m2Weights (m2->rows * m2->cols);
     for(int i {0}; i < m2->rows * m2->cols; i++)
-        m2Weights = get_rand();
+        m2Weights[i] = get_rand();
     m2->loadValues(m2Weights);
 }
 
@@ -68,6 +68,24 @@ int main() {
     int trainingExamples = 0;
     float errorRate;
 
+        numRight = 0;
+        errorRate = 0.0;
+        trainingExamples = 0;
+        for (auto row: testRows){
+            featureInput->loadValues(row.x);
+            targetInput->loadValues(row.t);
+
+            errorFunc->compute();
+            errorFunc->fromDevice();
+            predictor->fromDevice();
+
+            int out = fromModelOutput(predictor->value);
+
+            errorRate += *(errorFunc->value);
+            if(out == row.y) numRight++;
+        }
+        cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
+        cout << "model error on test set:" << errorRate << " .\n";
 
     while(count <= 1) {
 
@@ -102,6 +120,7 @@ int main() {
             predictor->fromDevice();
 
             int out = fromModelOutput(predictor->value);
+
             errorRate += *(errorFunc->value);
             if(out == row.y) numRight++;
         }

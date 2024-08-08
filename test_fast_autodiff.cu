@@ -30,41 +30,66 @@ int main() {
     ab->loadValues({ 3.0, 4.0 });
     InnerProduct* test_ip = new InnerProduct(xy, ab);
     test_ip->compute();
+    test_ip->fromDevice();
     
-    float* test_value = new float;
-    cudaMemcpy(test_value, test_ip->d_value, sizeof(float), cudaMemcpyDeviceToHost);
 
-    if( *test_value != 11.0) {
-        cout << "InnerProduct failed!  should be 11 but it is" << *test_value << ".\n";
+    if( *test_ip->value != 11.0) {
+        cout << "InnerProduct failed!  should be 11 but it is" << *test_ip->value << ".\n";
     }
 
     cout << "Testing AddCol \n";
 
     AddCol* test_add = new AddCol(xy, ab);
     test_add->compute();
+    test_add->fromDevice();
 
-    float* test_values = new float[2];
-    cudaMemcpy(test_values, test_add->d_value, 2*sizeof(float), cudaMemcpyDeviceToHost);
-
-    if (test_values[0] != 4 || test_values[1] != 6 ) {
+    if (test_add->value[0] != 4 || test_add->value[1] != 6 ) {
         cout << "AddCol failed! Should be  {4, 6} but its" 
-             << "{" << test_values[0] << ", " << test_values[1] << "}\n";
+             << "{" << test_add->value[0] << ", " << test_add->value[1] << "}\n";
     }
 
     cout << "Testing MatrixColProduct\n";
 
+    float *matrixGrad = new float[4];
     Matrix* abcd = new Matrix("abcd", 2, 2);
     abcd->loadValues({1,-1,-1, 1});
+    cudaMemcpy(matrixGrad, abcd->d_grad, 4 * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cout << "Matrix grad\n"
+         << matrixGrad[0] << ", " << matrixGrad[1] << "\n" 
+         << matrixGrad[2] << ", " << matrixGrad[3] << "\n";
 
     MatrixColProduct *test_matCol = new MatrixColProduct(abcd, xy);
     test_matCol->compute();
+    test_matCol->fromDevice();
+    test_matCol->computeGrad();
 
-    cudaMemcpy(test_values, test_matCol->d_value, 2*sizeof(float), cudaMemcpyDeviceToHost);
+    cudaMemcpy(matrixGrad, abcd->d_grad, 4 * sizeof(float), cudaMemcpyDeviceToHost);
 
-    if (test_values[0] != -1 || test_values[1] != 1 ) {
+    cout << "Matrix grad\n"
+         << matrixGrad[0] << ", " << matrixGrad[1] << "\n" 
+         << matrixGrad[2] << ", " << matrixGrad[3] << "\n";
+
+    xy->fromDevice();
+
+    cout << "xy: {" << xy->value[0] << ", " << xy->value[1] << "}\n";
+
+
+    if (test_matCol->value[0] != -1 || test_matCol->value[1] != 1 ) {
         cout << "MatrixColProduct failed! Should be  {-1, 1} but its" 
-             << "{" << test_values[0] << ", " << test_values[1] << "}\n";
+             << "{" << test_matCol->value[0] << ", " << test_matCol->value[1] << "}\n";
     }
+
+    cout << "Testing Leaky ReLU\n";
+
+    Col* z = new Col("z", 4);
+    ColLeakyReLU* relu = new ColLeakyReLU(z);
+    z->loadValues({500, -500, 0.5, -1});
+    relu->compute();
+    relu->fromDevice();
+
+    cout << relu->value[0] << ", " << relu->value[1] << ", " << relu->value[2] << ", " << relu->value[3]
+         << "\n";
 
 
 
