@@ -113,8 +113,8 @@ int main() {
     ADV* predictor = get_predictor(weights, &input);
     ADV* error = get_error(predictor, &target);
 
-    Training_Data rows = load_data_from_file("mnist_train.txt", 60000);
-    Training_Data test_rows = load_data_from_file("mnist_test.txt", 10000);
+    Training_Data rows = load_data_from_file("../data/mnist_train.txt", 60000);
+    Training_Data test_rows = load_data_from_file("../data/mnist_test.txt", 10000);
 
     int count = 1;
     int num_right = 0;

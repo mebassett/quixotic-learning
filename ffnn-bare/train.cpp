@@ -494,8 +494,8 @@ void print_weights(Model_Weights& weights) {
 
 
 int main(void) {
-    Training_Data rows = load_data_from_file("mnist_train.txt", 60000);
-    Training_Data test_rows = load_data_from_file("mnist_test.txt", 10000);
+    Training_Data rows = load_data_from_file("../data/mnist_train.txt", 60000);
+    Training_Data test_rows = load_data_from_file("../data/mnist_test.txt", 10000);
     FFNN_Model model = initiate_weights_(INPUT_SIZE+1, 100, OUTPUT_SIZE);
 
     int count = 0;

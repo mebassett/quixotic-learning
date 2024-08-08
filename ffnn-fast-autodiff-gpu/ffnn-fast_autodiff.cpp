@@ -59,8 +59,8 @@ int main() {
 
     Scalar* errorFunc = new Scalar(new InnerProduct(termError, termError), 0.5); 
     
-    Training_Data rows = load_data_from_file("mnist_train.txt", 60000);
-    Training_Data testRows = load_data_from_file("mnist_test.txt", 10000);
+    Training_Data rows = load_data_from_file("../data/mnist_train.txt", 60000);
+    Training_Data testRows = load_data_from_file("../data/mnist_test.txt", 10000);
      
     int count = 1;
     int numRight = 0;
