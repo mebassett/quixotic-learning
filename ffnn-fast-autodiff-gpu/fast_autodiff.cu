@@ -206,12 +206,14 @@ void doMatrixColGrad( int matrixCols
                     , float* matrix
                     , float* column
                     , float* d_seed
-                    , float* matrixGrad) {
+                    , float* matrixGrad
+                    , float* colGrad) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if( (row < matrixRows) && (col < matrixCols)) {
         int index = col + matrixCols * row;
         matrixGrad[index] = d_seed[row] * column[col];
+        atomicAdd(colGrad + col, d_seed[row] * matrix[index]);
     }
 
 }
@@ -219,18 +221,23 @@ void doMatrixColGrad( int matrixCols
 void MatrixColProduct::pushGrad(float* d_seed) {
     // assert len(seed) == this->matrix->rows
 
-    int size = this->matrix->rows * this->matrix->cols * sizeof(float);
+    int matrixSize = this->matrix->rows * this->matrix->cols * sizeof(float);
+    int colSize = this->col->rows * sizeof(float);
     float* matrixGrad;
+    float* colGrad;
+
     cudaError_t err;
 
-    cudaMalloc((void**) &matrixGrad, size);
+    cudaMalloc((void**) &matrixGrad, matrixSize);
+    cudaMalloc((void**) &colGrad, colSize);
+    cudaMemset(colGrad, 0.0, colSize);
 
     dim3 gd(ceil(this->matrix->cols/32.0), ceil(this->matrix->rows/32.0), 1);
     dim3 bd(32, 32, 1);
 
     doMatrixColGrad<<< gd, bd>>>( this->matrix->cols, this->matrix->rows 
                                 , this->matrix->d_value
-                                , this->col->d_value, d_seed, matrixGrad );
+                                , this->col->d_value, d_seed, matrixGrad, colGrad );
 
     err = cudaGetLastError();
     if(err != cudaSuccess) {
@@ -240,7 +247,7 @@ void MatrixColProduct::pushGrad(float* d_seed) {
     cudaDeviceSynchronize();
 
     this->matrix->pushGrad(matrixGrad);
-    //this->col->pushGrad(colGrad);
+    this->col->pushGrad(colGrad);
     cudaFree(d_seed);
 
 

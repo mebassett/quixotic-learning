@@ -37,7 +37,7 @@ int fromModelOutput(float* out) {
 int main() {
      float learningRate = 0.025;
 
-     Matrix* w1 = new Matrix ("weight1", NUM_HIDDEN_NODES, INPUT_SIZE);
+     Matrix* w1 = new Matrix ("weight1", NUM_HIDDEN_NODES, INPUT_SIZE+1);
      Matrix* w2 = new Matrix ("weight2", OUTPUT_SIZE, NUM_HIDDEN_NODES);
 
      initialize_weights(w1, w2, -0.05, 0.05);
