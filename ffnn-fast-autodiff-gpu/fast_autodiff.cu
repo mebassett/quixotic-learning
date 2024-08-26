@@ -253,6 +253,8 @@ void MatrixColProduct::pushGrad(float* d_seed) {
 
 }
 
+#define TILE_WIDTH 32
+
 __global__
 void doMatrixProduct( int Arows // Acols = Brows
                     , int Acols
@@ -260,15 +262,36 @@ void doMatrixProduct( int Arows // Acols = Brows
                     , float* result
                     , float* A
                     , float* B ) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if( (row < Arows) && (col < Bcols)) {
-        float val = 0;
-        for(int i {0}; i < Acols; i ++) 
-            val += A[(row * Acols) + i] * B[ (i * Bcols) + col  ];
 
-        result[(row*Bcols) + col] = val;
+    __shared__ float As[TILE_WIDTH][TILE_WIDTH];
+    __shared__ float Bs[TILE_WIDTH][TILE_WIDTH];
+
+    int row = blockIdx.y * TILE_WIDTH + threadIdx.y;
+    int col = blockIdx.x * TILE_WIDTH + threadIdx.x;
+
+    float resultVal = 0;
+
+    for(int tileIndex {0}; tileIndex < ceil(Acols/(float)TILE_WIDTH); tileIndex++) {
+
+        if( ((tileIndex * TILE_WIDTH + threadIdx.x) < Acols) && (row < Arows))
+            As[threadIdx.y][threadIdx.x] = A[ row*Acols + tileIndex*TILE_WIDTH + threadIdx.x];
+        else
+            As[threadIdx.y][threadIdx.x] = 0.0f;
+
+        if( ((tileIndex * TILE_WIDTH + threadIdx.y) < Acols) && (col < Bcols))
+            Bs[threadIdx.y][threadIdx.x] = B[ (tileIndex * TILE_WIDTH + threadIdx.y)*Bcols + col];
+        else
+            Bs[threadIdx.y][threadIdx.x] = 0.0f;
+        __syncthreads();
+
+        for(int k = 0; k< TILE_WIDTH; k++) {
+            resultVal += As[threadIdx.y][k] * Bs[k][threadIdx.x];
+        }
+        __syncthreads();
+
     }
+    if( (row < Arows) && (col < Bcols))
+        result[(blockIdx.y * blockDim.y + threadIdx.y)*Bcols + ((blockIdx.x * blockDim.x) + threadIdx.x)] = resultVal;
 }
 
 void MatrixColProduct::compute() {
@@ -276,8 +299,8 @@ void MatrixColProduct::compute() {
     this->col->compute();
     cudaError_t err;
 
-    dim3 bd(1, 1024, 1);
-    dim3 gd(1, ceil((this->col->rows)/1024.0), 1);
+    dim3 bd(TILE_WIDTH, TILE_WIDTH, 1);
+    dim3 gd(1, ceil((this->col->rows)/(float)TILE_WIDTH), 1);
 
 
     doMatrixProduct<<<gd, bd>>>( this->matrix->rows, this->matrix->cols, 1
