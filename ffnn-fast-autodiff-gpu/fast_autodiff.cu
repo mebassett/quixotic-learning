@@ -1,19 +1,13 @@
 #include <iostream>
 #include<valarray>
 #include "fast_autodiff.h"
+#include <cublas_v2.h>
+#include <cuda_runtime.h>
 
 using namespace std;
 
 namespace FA {
 
-__global__ void doAdd( int Arows, int Acols, float* result, float* A, float* B ) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if( (row < Arows) && (col < Acols)) {
-        int i = row * Acols + col;
-        result[i] = A[i] + B[i];
-    }
-}
 
 __global__ void doScale( int Arows, int Acols, float* result, float* A, float scalar) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -26,7 +20,7 @@ __global__ void doScale( int Arows, int Acols, float* result, float* A, float sc
 
 
 
-void AD::compute() {}
+void AD::compute(cublasHandle_t *handle) {}
 
 AD::AD(string _name, unsigned int _rows, unsigned int _cols)
     : name(_name)
@@ -56,7 +50,7 @@ __global__ void doFill( int rows, int cols, float value, float* result) {
     if( i < rows*cols)
         result[i] = value;
 }
-void AD::computeGrad() {
+void AD::computeGrad(cublasHandle_t *handle) {
     float* seed;
     cudaError_t err;
     int size = this->rows * this->cols * sizeof(float);
@@ -72,7 +66,7 @@ void AD::computeGrad() {
 
 
     
-    this->pushGrad(seed);
+    this->pushGrad(handle, seed);
     
     err = cudaDeviceSynchronize();
     if(err != cudaSuccess) {
@@ -94,20 +88,10 @@ void AD::resetGrad() {
     cudaMemset(this->d_grad, 0.0, this->rows * this->cols * sizeof(float));
 }
 
-void AD::pushGrad(float* d_seed) {
-    cudaError_t err;
-
-    dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
-    dim3 bd(32, 32, 1);
-
-    doAdd<<<gd, bd>>>( this->rows, this->cols, this->d_grad, this->d_grad, d_seed );
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error in AD pushGrad: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
+void AD::pushGrad(cublasHandle_t *handle, float* d_seed) {
+    float alpha = 1;
+    cublasSaxpy(*handle, this->cols * this->rows, &alpha, d_seed, 1, this->d_grad, 1);
     cudaFree(d_seed);
-
 }
 
 AbstractCol::AbstractCol(string _name, unsigned int _rows)
@@ -218,7 +202,7 @@ void doMatrixColGrad( int matrixCols
 
 }
 
-void MatrixColProduct::pushGrad(float* d_seed) {
+void MatrixColProduct::pushGrad(cublasHandle_t *handle, float* d_seed) {
     // assert len(seed) == this->matrix->rows
 
     int matrixSize = this->matrix->rows * this->matrix->cols * sizeof(float);
@@ -246,53 +230,34 @@ void MatrixColProduct::pushGrad(float* d_seed) {
     }
     cudaDeviceSynchronize();
 
-    this->matrix->pushGrad(matrixGrad);
-    this->col->pushGrad(colGrad);
+    this->matrix->pushGrad(handle, matrixGrad);
+    this->col->pushGrad(handle, colGrad);
     cudaFree(d_seed);
 
 
 }
 
-__global__
-void doMatrixProduct( int Arows // Acols = Brows
-                    , int Acols
-                    , int Bcols
-                    , float* result
-                    , float* A
-                    , float* B ) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if( (row < Arows) && (col < Bcols)) {
-        float val = 0;
-        for(int i {0}; i < Acols; i ++) 
-            val += A[(row * Acols) + i] * B[ (i * Bcols) + col  ];
 
-        result[(row*Bcols) + col] = val;
-    }
-}
+void MatrixColProduct::compute(cublasHandle_t *handle) {
+    this->matrix->compute(handle);
+    this->col->compute(handle);
 
-void MatrixColProduct::compute() {
-    this->matrix->compute();
-    this->col->compute();
-    cudaError_t err;
+    float alpha = 1;
+    float beta = 0;
 
-    dim3 bd(1, 1024, 1);
-    dim3 gd(1, ceil((this->col->rows)/1024.0), 1);
+    cublasSgemv(*handle,
+                CUBLAS_OP_T,
+                this->matrix->cols,
+                this->matrix->rows,
+                &alpha,
+                this->matrix->d_value,
+                this->matrix->cols,
+                this->col->d_value,
+                1,
+                &beta,
+                this->d_value,
+                1);
 
-
-    doMatrixProduct<<<gd, bd>>>( this->matrix->rows, this->matrix->cols, 1
-                               , this->d_value, this->matrix->d_value
-                               , this->col->d_value);
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error in MatrixColProduct::compute: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-    err = cudaDeviceSynchronize();
-    if(err != cudaSuccess) {
-        printf("sync error in MatrixColProduct::compute: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
 
 
 }
@@ -325,7 +290,7 @@ void doComponentProduct( int rows
 
 }
 
-void ColLeakyReLU::pushGrad(float* d_seed) {
+void ColLeakyReLU::pushGrad(cublasHandle_t *handle, float* d_seed) {
     float* newSeed;
     cudaError_t err;
 
@@ -342,7 +307,7 @@ void ColLeakyReLU::pushGrad(float* d_seed) {
     }
     cudaDeviceSynchronize();
 
-    this->col->pushGrad(newSeed);
+    this->col->pushGrad(handle, newSeed);
     cudaFree(d_seed);
 }
 
@@ -367,8 +332,8 @@ void doLeakyReLU( int Arows
     }
 }
 
-void ColLeakyReLU::compute() {
-    this->col->compute();
+void ColLeakyReLU::compute(cublasHandle_t *handle) {
+    this->col->compute(handle);
     cudaError_t err;
 
     dim3 bd (1, 1024, 1);
@@ -402,43 +367,22 @@ void Scalar::resetGrad() {
 
 
 
-void Scalar::pushGrad(float* d_seed) {
+void Scalar::pushGrad(cublasHandle_t *handle, float* d_seed) {
     float *newSeed;
-    cudaError_t err;
-
     cudaMalloc((void**) &newSeed, this->col->rows * sizeof(float));
+    cublasScopy(*handle, this->col->rows, d_seed, 1, newSeed, 1);
+    cublasSscal(*handle, this->col->rows, &(this->scalar), newSeed, 1);
 
-    dim3 bd (1, 1024, 1);
-    dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
-
-    doScale<<<gd, bd>>>( this->col->rows, 1, newSeed, d_seed, this->scalar );
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error in Scalar::pushGrad: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-
-    this->col->pushGrad(newSeed);
     cudaFree(d_seed);
+    this->col->pushGrad(handle, newSeed);
 }
 
 
-void Scalar::compute() {
-    this->col->compute();
-    cudaError_t err;
+void Scalar::compute(cublasHandle_t *handle) {
+    this->col->compute(handle);
 
-
-    dim3 bd (1, 1024, 1);
-    dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
-
-    doScale<<<gd, bd>>>( this->col->rows, 1, this->d_value, this->col->d_value, this->scalar );
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error in Scalar::compute: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-    cudaDeviceSynchronize();
-
+    cublasScopy(*handle, this->col->rows, this->col->d_value, 1, this->d_value, 1);
+    cublasSscal(*handle, this->col->rows, &(this->scalar), this->d_value,1);
 
 }
 
@@ -459,31 +403,23 @@ void AddCol::resetGrad() {
     this->col2->resetGrad();
 }
 
-void AddCol::pushGrad(float* d_seed) {
+void AddCol::pushGrad(cublasHandle_t *handle, float* d_seed) {
     float* copySeed ;
     cudaMalloc((void**) &copySeed, this->col1->rows * sizeof(float));
     cudaMemcpy(copySeed, d_seed, this->col1->rows * sizeof(float), cudaMemcpyDeviceToDevice);
-    this->col1->pushGrad(d_seed);
-    this->col2->pushGrad(copySeed);
+    this->col1->pushGrad(handle, d_seed);
+    this->col2->pushGrad(handle, copySeed);
 }
 
 
-void AddCol::compute() {
-    this->col1->compute();
-    this->col2->compute();
-    cudaError_t err;
+void AddCol::compute(cublasHandle_t *handle) {
+    this->col1->compute(handle);
+    this->col2->compute(handle);
+    float alpha = 1;
 
+    cublasScopy(*handle, this->col1->rows, this->col1->d_value, 1, this->d_value, 1);
 
-    dim3 bd (1, 1024, 1);
-    dim3 gd (1, ceil((this->col1->rows)/1024.0), 1);
-
-    doAdd<<<gd, bd>>>( this->col1->rows, 1, this->d_value, this->col1->d_value, this->col2->d_value );
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error in AddCol::compute: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-    cudaDeviceSynchronize();
+    cublasSaxpy(*handle, this->col1->rows, &alpha, this->col2->d_value, 1, this->d_value, 1);
 
 
 
@@ -510,7 +446,7 @@ void InnerProduct::resetGrad() {
     this->col2->resetGrad();
 }
 
-void InnerProduct::pushGrad(float* d_seed) {
+void InnerProduct::pushGrad(cublasHandle_t *handle, float* d_seed) {
     // assume len(seed)=1 here...
     float* vec1;
     float* vec2;
@@ -543,8 +479,8 @@ void InnerProduct::pushGrad(float* d_seed) {
         exit(1);
     }
     
-    this->col2->pushGrad(vec1);
-    this->col1->pushGrad(vec2);
+    this->col2->pushGrad(handle, vec1);
+    this->col1->pushGrad(handle, vec2);
 
     delete scalar;
     cudaFree(d_seed);
@@ -559,40 +495,13 @@ void doSingleSum(int rows, float* arr, float* result) {
     *result = sum;
 }
 
-void InnerProduct::compute() {
-    this->col1->compute();
-    this->col2->compute();
-
-    float* product;
-    cudaError_t err;
-
-    cudaMalloc((void**) &product, this->col1->rows * sizeof(float));
-
-    dim3 bd(1, 1024, 1);
-    dim3 gd(1, ceil((this->col1->rows)/1024.0), 1);
+void InnerProduct::compute(cublasHandle_t *handle) {
+    this->col1->compute(handle);
+    this->col2->compute(handle);
 
 
-    doComponentProduct<<<gd, bd>>>(this->col1->rows, this->col1->d_value
-                                  , this->col2->d_value, product);
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error InnerProduct::compute (component): %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
-    err = cudaDeviceSynchronize();
-    if(err != cudaSuccess) {
-        printf("InnerProduct::compute could not sync device: %s\n", cudaGetErrorName(err));
-        exit(1);
-    }
-
-    doSingleSum<<<1, 1>>>(this->col1->rows, product, this->d_value);
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error InnerProduct::compute(sum): %s - %s \n", cudaGetErrorName(err), cudaGetErrorString(err));
-        exit(1);
-    }
-    cudaDeviceSynchronize();
-    cudaFree(product);
+    cublasSdot(*handle, this->col1->rows, this->col1->d_value, 1,
+               this->col2->d_value, 1, this->d_value);
 
 }
 

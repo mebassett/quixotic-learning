@@ -4,6 +4,10 @@
 #include<utility>
 #include<random>
 #include<valarray>
+
+#include <cublas_v2.h>
+#include <cuda_runtime.h>
+
 #include "fast_autodiff.h"
 #include "mnistdata.h"
     
@@ -41,6 +45,9 @@ int fromModelOutput(float* out) {
 
 int main() {
      float learningRate = 0.025;
+     cublasHandle_t cublasH;
+
+     cublasCreate(&cublasH);
 
 
      Matrix* w1 = new Matrix ("weight1", NUM_HIDDEN_NODES, INPUT_SIZE + 1);
@@ -74,7 +81,7 @@ int main() {
         featureInput->loadValues(row.x);
         targetInput->loadValues(row.t);
 
-        errorFunc->compute();
+        errorFunc->compute(&cublasH);
         errorFunc->fromDevice();
         predictor->fromDevice();
 
@@ -95,8 +102,8 @@ int main() {
             featureInput->loadValues(row.x);
             targetInput->loadValues(row.t);
 
-            errorFunc->compute();
-            errorFunc->computeGrad();
+            errorFunc->compute(&cublasH);
+            errorFunc->computeGrad(&cublasH);
 
             w1->gradDescent(learningRate);
             w2->gradDescent(learningRate);
@@ -114,7 +121,7 @@ int main() {
             featureInput->loadValues(row.x);
             targetInput->loadValues(row.t);
 
-            errorFunc->compute();
+            errorFunc->compute(&cublasH);
             errorFunc->fromDevice();
             predictor->fromDevice();
 
