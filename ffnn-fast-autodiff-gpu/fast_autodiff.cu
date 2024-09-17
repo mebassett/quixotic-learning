@@ -9,17 +9,6 @@ using namespace std;
 namespace FA {
 
 
-__global__ void doScale( int Arows, int Acols, float* result, float* A, float scalar) {
-    int row = blockIdx.y * blockDim.y + threadIdx.y;
-    int col = blockIdx.x * blockDim.x + threadIdx.x;
-    if( (row < Arows) && (col < Acols)) {
-        int i = row * Acols + col;
-        result[i] = A[i] * scalar;
-    }
-}
-
-
-
 void AD::compute(cublasHandle_t *handle) {}
 
 AD::AD(string _name, unsigned int _rows, unsigned int _cols)
@@ -122,22 +111,23 @@ void doGradDescent( float learningRate, int matrixCols, int matrixRows, float* m
 
 
 }
-void Matrix::gradDescent(float learningRate) {
-    cudaError_t err;
+void Matrix::gradDescent(cublasHandle_t *handle, float learningRate) {
+    float alpha = 1;
+    float beta = -1 * learningRate;
 
-    dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
-    dim3 bd(32, 32, 1);
-    doGradDescent<<< gd, bd >>> (learningRate, this->cols, this->rows, this->d_value, this->d_grad);
-
-    err = cudaGetLastError();
-    if(err != cudaSuccess) {
-        printf("Kernel launch error in Matrix::gradDescent: %s - %s\n", 
-                cudaGetErrorName(err),
-                cudaGetErrorString(err));
-        exit(1);
-    }
-
-    cudaDeviceSynchronize();
+    cublasSgeam(*handle,
+                CUBLAS_OP_N,
+                CUBLAS_OP_N,
+                this->rows,
+                this->cols,
+                &alpha,
+                this->d_value,
+                this->rows,
+                &beta,
+                this->d_grad,
+                this->rows,
+                this->d_value,
+                this->rows);
 }
 
 void Matrix::loadValues(valarray<float> newValues) {

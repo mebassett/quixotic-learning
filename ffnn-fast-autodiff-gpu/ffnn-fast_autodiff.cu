@@ -105,8 +105,8 @@ int main() {
             errorFunc->compute(&cublasH);
             errorFunc->computeGrad(&cublasH);
 
-            w1->gradDescent(learningRate);
-            w2->gradDescent(learningRate);
+            w1->gradDescent(&cublasH, learningRate);
+            w2->gradDescent(&cublasH, learningRate);
 
 
             trainingExamples++;

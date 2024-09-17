@@ -36,7 +36,7 @@ struct Col : AbstractCol {
 
 struct Matrix : AD {
     void loadValues(std::valarray<float> newValues);
-    void gradDescent(float learningRate);
+    void gradDescent(cublasHandle_t *handle, float learningRate);
     Matrix(std::string _name, unsigned int _rows, unsigned int _cols);
 };
 
