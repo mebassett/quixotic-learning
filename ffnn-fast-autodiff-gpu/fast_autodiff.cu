@@ -1,5 +1,6 @@
 #include <iostream>
-#include<valarray>
+#include <valarray>
+#include <stdexcept>
 #include "fast_autodiff.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
@@ -240,10 +241,17 @@ void MatrixColProduct::compute(cublasHandle_t *handle) {
 
 }
 
-MatrixColProduct::MatrixColProduct(Matrix* m, AbstractCol* x)
+MatrixColProduct::MatrixColProduct(AD* m, AbstractCol* x)
     : AbstractCol("Matrix product of " + m->name + " and " + x->name, m->rows)
     , matrix(m)
     , col(x) {
+
+    if(m->cols != x->rows)
+        throw invalid_argument("Input matrix " + m->name
+                              + " has " + to_string(m->cols) + " rows but"
+                              + " column vector has " + to_string(x->rows) 
+                              + " columns.");
+
 }
 
 MatrixColProduct::~MatrixColProduct() {
@@ -474,6 +482,95 @@ InnerProduct::~InnerProduct() {
         delete this->col1;
         delete this->col2;
     }
+}
+
+void Convolution::resetGrad() {
+    AD::resetGrad();
+    this->multiplicand->resetGrad();
+}
+
+
+__global__ void doConvolution(int targetRows, int targetCols,
+                              int multiplicandRows, int multiplicandCols,
+                              int rowPadding, int rowSkip, int kernelRows,
+                              int colPadding, int colSkip, int kernelCols,
+                              float* multiplicand,
+                              float* kernel,
+                              float* result) {
+    int trow = blockIdx.y * blockDim.y + threadIdx.y;
+    int tcol = blockIdx.x * blockDim.x + threadIdx.x;
+    if(trow < targetRows && tcol < targetCols) {
+        float val = 0;
+        int mrow = - rowPadding + rowSkip * trow;
+        int mcol = - colPadding + colSkip * tcol;
+
+        for(int i =mrow; i < mrow + kernelRows; i++)
+            for(int j =mcol; j< mcol + kernelCols; j++) 
+                if(i >= 0 && j >= 0 && i < multiplicandRows && j < multiplicandCols) {
+                    int mIndex = multiplicandCols * i + j;
+                    int kIndex = kernelCols * (i-mrow) + (j-mcol);   
+                    val += multiplicand[mIndex] * kernel[kIndex];
+                }
+        
+
+        result[targetCols * trow + tcol] = val;
+    }
+}
+
+void Convolution::compute(cublasHandle_t *handle) {
+    this->multiplicand->compute(handle);
+    cudaError_t err; 
+    dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
+    dim3 bd(32, 32, 1);
+    doConvolution<<<gd, bd>>>(this->rows, this->cols,
+                              this->multiplicand->rows, this->multiplicand->cols,
+                              this->rowPadding, this->rowSkip, this->kernelRows,
+                              this->colPadding, this->colSkip, this->kernelCols,
+                              this->multiplicand->d_value,
+                              this->d_kernel,
+                              this->d_value );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in Convolution::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+    cudaDeviceSynchronize();
+}
+
+void Convolution::loadKernel(valarray<float> newKernel) {
+    if(newKernel.size() != this->kernelRows * this->kernelCols)
+        throw out_of_range("size of kernel " + this->name + " (" + to_string(this->kernelRows * this->kernelCols) + ") does not match size of valarray (" + to_string(newKernel.size()) + ").");
+    
+    int size = this->kernelRows * this->kernelCols * sizeof(float);
+
+    cudaError_t err = cudaMemcpy(this->d_kernel, &(newKernel[0]), size, cudaMemcpyHostToDevice);
+    if(err != cudaSuccess) {
+        printf("Convolution::loadKernel unable to cudaMemcpy: %s - %s\n", 
+                cudaGetErrorName(err),
+                cudaGetErrorString(err));
+        exit(1);
+    }
+}
+
+Convolution::Convolution(Matrix* m,
+        unsigned int kRows, unsigned int kCols,
+        unsigned int rowPadding, unsigned int rowSkip,
+        unsigned int colPadding, unsigned int colSkip)
+    : multiplicand(m)
+    , kernelRows(kRows)
+    , kernelCols(kCols)
+    , rowPadding(rowPadding)
+    , rowSkip(rowSkip)
+    , colPadding(colPadding)
+    , colSkip(colSkip)
+    , AD("Convolution of "+m->name, (m->rows + 2 * rowPadding - kRows)/rowSkip + 1, (m->cols + 2*colPadding - kCols)/colSkip + 1){  
+    cudaMalloc((void**) &this->d_kernel, kRows * kCols *  sizeof(float));
+}
+
+Convolution::~Convolution() {
+    delete this->multiplicand;
+    cudaFree(this->d_kernel);
 }
 
 }

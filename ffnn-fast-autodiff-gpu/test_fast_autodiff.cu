@@ -118,6 +118,52 @@ int main() {
     cout << "I'm expecting that d/dx (x^2) at x=9 is 18, but I computed: " << *grad << ".\n";
 
     delete grad;
+    
+    cout << "Convolution tests...\n";
+    Matrix* inputValues = new Matrix("input", 3, 3);
+    inputValues->loadValues({1,2,3,4,5,6,7,8,9});
+
+    Convolution* conv = new Convolution(inputValues, 2, 2, 0,1,0,1);
+    conv->loadKernel({3,3,3,3});
+
+    conv->compute(&cublasH);
+    float* testvalues = new float[4];
+    cudaMemcpy(testvalues, conv->d_value, sizeof(float)*4, cudaMemcpyDeviceToHost);
+
+    if(testvalues[0] != 36 || testvalues[1] != 48 || testvalues[2] != 72 || testvalues[3] != 84) {
+        cout << "Convolution failed!  The output should be \n"
+             << "( 36, 48 \n"
+             << "  72, 84)\n"
+             << "but it is\n"
+             << "( " << testvalues[0] << ", " << testvalues[1] << " \n"
+             << "  " << testvalues[2] << ", " << testvalues[3] << ")\n";
+            
+    }
+
+    delete testvalues;
+    delete conv;
+
+    inputValues = new Matrix("input", 4, 4);
+    inputValues->loadValues({1,2,3,4,5,6,7,8,9,1,2,3,4,5,6,7});
+
+
+    conv = new Convolution(inputValues, 3, 3, 1, 3, 1, 3);
+    conv->loadKernel({1,0,0,0,1,0,0,0,1});
+
+    conv->compute(&cublasH);
+    testvalues = new float[4];
+    cudaMemcpy(testvalues, conv->d_value, sizeof(float)*4, cudaMemcpyDeviceToHost);
+    if(testvalues[0] != 7 || testvalues[1] != 4 || testvalues[2] != 4 || testvalues[3] != 9) {
+        cout << "Convolution failed!  The output should be \n"
+             << "( 7, 4 \n"
+             << "  4, 9)\n"
+             << "but it is\n"
+             << "( " << testvalues[0] << ", " << testvalues[1] << " \n"
+             << "  " << testvalues[2] << ", " << testvalues[3] << ")\n";
+            
+    }
+    delete testvalues;
+    delete conv;
 
 
 

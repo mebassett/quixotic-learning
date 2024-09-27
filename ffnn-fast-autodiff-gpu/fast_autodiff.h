@@ -41,12 +41,12 @@ struct Matrix : AD {
 };
 
 struct MatrixColProduct : AbstractCol {
-    Matrix* matrix;
+    AD* matrix;
     AbstractCol* col;
     void resetGrad() override;
     void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle) override;
-    MatrixColProduct(Matrix* m, AbstractCol* x);
+    MatrixColProduct(AD* m, AbstractCol* x);
     ~MatrixColProduct() override;
 };
 
@@ -88,6 +88,27 @@ struct InnerProduct : AbstractCol {
     void compute(cublasHandle_t *handle) override;
     InnerProduct(AbstractCol* _col1, AbstractCol* _col2);
     ~InnerProduct() override;
+};
+
+struct Convolution : AD {
+    Matrix* multiplicand;
+    float* d_kernel;
+    unsigned int kernelRows;
+    unsigned int kernelCols;
+    unsigned int rowPadding;
+    unsigned int rowSkip;
+    unsigned int colPadding;
+    unsigned int colSkip;
+
+    void resetGrad() override;
+    void compute(cublasHandle_t *handle);
+    void loadKernel(std::valarray<float> newKernel);
+    Convolution(Matrix* m, 
+                unsigned int kRows, unsigned int kCols,
+                unsigned int rowPadding, unsigned int rowSkip,
+                unsigned int colPadding, unsigned int colSkip);
+    ~Convolution() override;
+
 };
 
 }
