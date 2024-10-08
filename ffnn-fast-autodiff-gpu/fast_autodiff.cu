@@ -10,6 +10,17 @@ using namespace std;
 namespace FA {
 
 
+ostream& outputMatrix(ostream& os, float* m, unsigned int rows, unsigned int cols) {
+    for(int row {0}; row< rows;row++) {
+        for(int col {0}; col<cols;col++) {
+            os << m[row*cols + col] << " ";
+        }
+        os << "\n";
+    }
+    
+    return os;
+}
+
 void AD::compute(cublasHandle_t *handle) {}
 
 AD::AD(string _name, unsigned int _rows, unsigned int _cols)
@@ -484,6 +495,96 @@ InnerProduct::~InnerProduct() {
     }
 }
 
+__global__ void doPadInput(float* input, float* paddedInput,
+        int inputRows, int inputCols, int rowPadding, int colPadding) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    int rows = inputRows + 2*rowPadding;
+    int cols = inputCols + 2*colPadding;
+
+    if(row < rows && col < cols) {
+        if(row - rowPadding >= 0 && row < inputRows +rowPadding
+            && col - colPadding >= 0 && col < inputCols + colPadding)
+            paddedInput[row*cols + col] = input[(row - rowPadding) * inputCols + col - colPadding];
+        else
+            paddedInput[row*cols + col] = 0;
+    }
+}
+
+void Convolution::padInput() {
+    int paddedInputRows = this->multiplicand->rows + this->rowPadding * 2;
+    int paddedInputCols = this->multiplicand->cols + this->colPadding * 2;
+
+    cudaError_t err; 
+    dim3 gd(ceil(paddedInputCols/32.0), ceil(paddedInputRows/32.0), 1);
+    dim3 bd(32, 32, 1);
+    doPadInput<<<gd, bd>>>(this->multiplicand->d_value, this->d_input,
+            this->multiplicand->rows, this->multiplicand->cols, 
+            this->rowPadding, this->colPadding);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in Convolution::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+    cudaDeviceSynchronize();
+
+
+
+
+}
+
+
+__global__ void doUnroll(float* kernel, float* matrix,
+                         int kernelRows, int kernelCols,
+                         int mRows, int mCols,
+                         int inCols, int outCols,
+                         int rowSkip, int colSkip) {
+    int mrow = blockIdx.y * blockDim.y + threadIdx.y;
+    int mcol = blockIdx.x * blockDim.x + threadIdx.x;
+    if(mrow < mRows && mcol < mCols) {
+        int outRow = mrow / outCols;
+        int outCol = mrow % outCols;
+
+        int inRow = mcol / inCols;
+        int inCol = mcol % inCols;
+
+        int kRowIndex = inRow - rowSkip * outRow;
+        int kColIndex = inCol - colSkip * outCol;
+
+        if(    kRowIndex >= 0 && kRowIndex < kernelRows 
+            && kColIndex >=0 && kColIndex < kernelCols) {
+            matrix[mrow*mCols + mcol] = kernel[kRowIndex * kernelCols + kColIndex];
+        }else{
+            matrix[mrow*mCols + mcol] = 0;
+        }
+
+    }
+}
+
+void Convolution::unrollKernel() {
+
+
+    cudaError_t err; 
+    dim3 gd(ceil(this->unrKrnlCols/32.0), ceil(this->unrKrnlRows/32.0), 1);
+    dim3 bd(32, 32, 1);
+    doUnroll<<<gd, bd>>>(this->kernel->d_value, this->d_kernel,
+             this->kernel->rows, this->kernel->cols,
+             unrKrnlRows, this->unrKrnlCols,
+             this->multiplicand->cols + 2*this->colPadding, this->cols,
+             this->rowSkip, this->colSkip);
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in Convolution::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+    cudaDeviceSynchronize();
+
+
+
+}
+
 void Convolution::resetGrad() {
     AD::resetGrad();
     this->multiplicand->resetGrad();
@@ -517,17 +618,19 @@ __global__ void doConvolution(int targetRows, int targetCols,
     }
 }
 
-void Convolution::compute(cublasHandle_t *handle) {
+
+void Convolution::compute2(cublasHandle_t *handle) {
     this->multiplicand->compute(handle);
+    this->kernel->compute(handle);
     cudaError_t err; 
     dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
     dim3 bd(32, 32, 1);
     doConvolution<<<gd, bd>>>(this->rows, this->cols,
                               this->multiplicand->rows, this->multiplicand->cols,
-                              this->rowPadding, this->rowSkip, this->kernelRows,
-                              this->colPadding, this->colSkip, this->kernelCols,
+                              this->rowPadding, this->rowSkip, this->kernel->rows,
+                              this->colPadding, this->colSkip, this->kernel->cols,
                               this->multiplicand->d_value,
-                              this->d_kernel,
+                              this->kernel->d_value,
                               this->d_value );
     err = cudaGetLastError();
     if(err != cudaSuccess) {
@@ -538,39 +641,54 @@ void Convolution::compute(cublasHandle_t *handle) {
     cudaDeviceSynchronize();
 }
 
-void Convolution::loadKernel(valarray<float> newKernel) {
-    if(newKernel.size() != this->kernelRows * this->kernelCols)
-        throw out_of_range("size of kernel " + this->name + " (" + to_string(this->kernelRows * this->kernelCols) + ") does not match size of valarray (" + to_string(newKernel.size()) + ").");
-    
-    int size = this->kernelRows * this->kernelCols * sizeof(float);
+void Convolution::compute(cublasHandle_t *handle) {
+    this->multiplicand->compute(handle);
+    this->kernel->compute(handle);
+    this->padInput();
+    this->unrollKernel();
+    float alpha = 1;
+    float beta = 0;
 
-    cudaError_t err = cudaMemcpy(this->d_kernel, &(newKernel[0]), size, cudaMemcpyHostToDevice);
-    if(err != cudaSuccess) {
-        printf("Convolution::loadKernel unable to cudaMemcpy: %s - %s\n", 
-                cudaGetErrorName(err),
-                cudaGetErrorString(err));
-        exit(1);
-    }
+    cublasSgemv(*handle,
+                CUBLAS_OP_T,
+                this->unrKrnlCols,
+                this->unrKrnlRows,
+                &alpha,
+                this->d_kernel,
+                this->unrKrnlCols,
+                this->d_input,
+                1,
+                &beta,
+                this->d_value,
+                1);
+
 }
 
-Convolution::Convolution(Matrix* m,
-        unsigned int kRows, unsigned int kCols,
+
+Convolution::Convolution(Matrix* m, Matrix* k,
         unsigned int rowPadding, unsigned int rowSkip,
         unsigned int colPadding, unsigned int colSkip)
     : multiplicand(m)
-    , kernelRows(kRows)
-    , kernelCols(kCols)
+    , kernel(k)
     , rowPadding(rowPadding)
     , rowSkip(rowSkip)
     , colPadding(colPadding)
     , colSkip(colSkip)
-    , AD("Convolution of "+m->name, (m->rows + 2 * rowPadding - kRows)/rowSkip + 1, (m->cols + 2*colPadding - kCols)/colSkip + 1){  
-    cudaMalloc((void**) &this->d_kernel, kRows * kCols *  sizeof(float));
+    , AD("Convolution of "+m->name, (m->rows + 2 * rowPadding - k->rows)/rowSkip + 1, (m->cols + 2*colPadding - k->cols)/colSkip + 1){  
+
+    this->unrKrnlCols = (this->multiplicand->rows + this->rowPadding *2) 
+                             * (this->multiplicand->cols + this->colPadding * 2);
+    this->unrKrnlRows = this->rows * this->cols;
+    unsigned int unrKrnlSize = this->unrKrnlRows * this->unrKrnlCols;
+    cudaMalloc((void**) &this->d_kernel, unrKrnlSize * sizeof(float));
+    cudaMalloc((void**) &this->d_input, this->unrKrnlCols * sizeof(float));
 }
 
 Convolution::~Convolution() {
     delete this->multiplicand;
+    delete this->kernel;
     cudaFree(this->d_kernel);
+    cudaFree(this->d_input);
 }
 
 }

@@ -121,12 +121,26 @@ int main() {
     
     cout << "Convolution tests...\n";
     Matrix* inputValues = new Matrix("input", 3, 3);
-    inputValues->loadValues({1,2,3,4,5,6,7,8,9});
+    Matrix* kernel = new Matrix("kernel", 2, 2);
 
-    Convolution* conv = new Convolution(inputValues, 2, 2, 0,1,0,1);
-    conv->loadKernel({3,3,3,3});
+    inputValues->loadValues({1,2,3,4,5,6,7,8,9});
+    kernel->loadValues({3,3,3,3});
+
+
+    Convolution* conv = new Convolution(inputValues, kernel, 0,1,0,1);
+
+    conv->unrollKernel();
+
+    float* testkernel = new float[conv->unrKrnlCols * conv->unrKrnlRows];
+    cudaMemcpy(testkernel, conv->d_kernel, sizeof(float)*conv->unrKrnlCols*conv->unrKrnlRows, cudaMemcpyDeviceToHost);
+
+    cout << "unrolled kernel looks like \n";
+    outputMatrix(cout, testkernel, conv->unrKrnlRows, conv->unrKrnlCols);
+    cout << "end unrolled kernel\n";
+
 
     conv->compute(&cublasH);
+
     float* testvalues = new float[4];
     cudaMemcpy(testvalues, conv->d_value, sizeof(float)*4, cudaMemcpyDeviceToHost);
 
@@ -134,21 +148,31 @@ int main() {
         cout << "Convolution failed!  The output should be \n"
              << "( 36, 48 \n"
              << "  72, 84)\n"
-             << "but it is\n"
-             << "( " << testvalues[0] << ", " << testvalues[1] << " \n"
-             << "  " << testvalues[2] << ", " << testvalues[3] << ")\n";
+             << "but it is\n";
+        outputMatrix(cout, testvalues, 2, 2);
             
     }
 
     delete testvalues;
+    delete testkernel;
     delete conv;
 
     inputValues = new Matrix("input", 4, 4);
+    kernel = new Matrix("kernel", 3, 3);
     inputValues->loadValues({1,2,3,4,5,6,7,8,9,1,2,3,4,5,6,7});
+    kernel->loadValues({1,0,0,0,1,0,0,0,1});
 
 
-    conv = new Convolution(inputValues, 3, 3, 1, 3, 1, 3);
-    conv->loadKernel({1,0,0,0,1,0,0,0,1});
+    conv = new Convolution(inputValues, kernel, 1, 3, 1, 3);
+
+    conv->unrollKernel();
+
+    testkernel = new float[conv->unrKrnlCols * conv->unrKrnlRows];
+    cudaMemcpy(testkernel, conv->d_kernel, sizeof(float)*conv->unrKrnlCols*conv->unrKrnlRows, cudaMemcpyDeviceToHost);
+
+    cout << "unrolled kernel looks like \n";
+    outputMatrix(cout, testkernel, conv->unrKrnlRows, conv->unrKrnlCols);
+    cout << "end unrolled kernel\n";
 
     conv->compute(&cublasH);
     testvalues = new float[4];
@@ -157,12 +181,12 @@ int main() {
         cout << "Convolution failed!  The output should be \n"
              << "( 7, 4 \n"
              << "  4, 9)\n"
-             << "but it is\n"
-             << "( " << testvalues[0] << ", " << testvalues[1] << " \n"
-             << "  " << testvalues[2] << ", " << testvalues[3] << ")\n";
+             << "but it is\n";
+        outputMatrix(cout, testvalues, 2, 2);
             
     }
     delete testvalues;
+    delete testkernel;
     delete conv;
 
 

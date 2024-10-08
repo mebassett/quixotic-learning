@@ -1,12 +1,15 @@
 // fast_autodiff.h
 #ifndef FAST_AUTODIFF_H
 #define FAST_AUTODIFF_H
-#include<valarray>
+#include <valarray>
+#include<utility>
 #include <iostream>
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
 namespace FA {
+
+std::ostream& outputMatrix(std::ostream& os, float* m, unsigned int rows, unsigned int cols);
 
 struct AD {
     std::string name;
@@ -92,19 +95,26 @@ struct InnerProduct : AbstractCol {
 
 struct Convolution : AD {
     Matrix* multiplicand;
+    Matrix* kernel;
+
     float* d_kernel;
-    unsigned int kernelRows;
-    unsigned int kernelCols;
+    float* d_input;
+
     unsigned int rowPadding;
     unsigned int rowSkip;
     unsigned int colPadding;
     unsigned int colSkip;
 
+    unsigned int unrKrnlRows;
+    unsigned int unrKrnlCols;
+
+    void unrollKernel();
+    void padInput();
+
     void resetGrad() override;
     void compute(cublasHandle_t *handle);
-    void loadKernel(std::valarray<float> newKernel);
-    Convolution(Matrix* m, 
-                unsigned int kRows, unsigned int kCols,
+    void compute2(cublasHandle_t *handle);
+    Convolution(Matrix* multiplicand, Matrix* kernel,
                 unsigned int rowPadding, unsigned int rowSkip,
                 unsigned int colPadding, unsigned int colSkip);
     ~Convolution() override;
