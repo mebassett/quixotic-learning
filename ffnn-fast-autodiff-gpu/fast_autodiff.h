@@ -94,8 +94,8 @@ struct InnerProduct : AbstractCol {
 };
 
 struct Convolution : AD {
-    Matrix* multiplicand;
-    Matrix* kernel;
+    AD* multiplicand;
+    AD* kernel;
 
     float* d_kernel;
     float* d_input;
@@ -112,9 +112,9 @@ struct Convolution : AD {
     void padInput();
 
     void resetGrad() override;
+    void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle);
-    void compute2(cublasHandle_t *handle);
-    Convolution(Matrix* multiplicand, Matrix* kernel,
+    Convolution(AD* multiplicand, AD* kernel,
                 unsigned int rowPadding, unsigned int rowSkip,
                 unsigned int colPadding, unsigned int colSkip);
     ~Convolution() override;

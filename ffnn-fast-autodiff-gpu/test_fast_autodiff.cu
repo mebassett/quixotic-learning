@@ -10,10 +10,10 @@ using namespace FA;
 int main() {
     cublasHandle_t cublasH;
     cublasCreate(&cublasH);
+
     cout << "Testing Scalar \n";
 
     Col* xy = new Col("xy", 2);
-
     xy->loadValues({ 1.0, 2.0});
     
     Scalar* test_scalar = new Scalar(xy, 5);
@@ -27,11 +27,14 @@ int main() {
              << "}.\n";
 
     }
+    delete test_scalar;
 
     cout << "Testing InnerProduct \n";
 
     Col* ab = new Col("ab", 2);
     ab->loadValues({ 3.0, 4.0 });
+    xy = new Col("xy", 2);
+    xy->loadValues({ 1.0, 2.0});
     InnerProduct* test_ip = new InnerProduct(xy, ab);
     test_ip->compute(&cublasH);
     test_ip->fromDevice();
@@ -40,9 +43,15 @@ int main() {
     if( *test_ip->value != 11.0) {
         cout << "InnerProduct failed!  should be 11 but it is" << *test_ip->value << ".\n";
     }
+    delete test_ip;
 
     cout << "Testing AddCol \n";
 
+    
+    xy = new Col("xy", 2);
+    xy->loadValues({ 1.0, 2.0});
+    ab = new Col("ab", 2);
+    ab->loadValues({3.0, 4.0});
     AddCol* test_add = new AddCol(xy, ab);
     test_add->compute(&cublasH);
     test_add->fromDevice();
@@ -51,12 +60,15 @@ int main() {
         cout << "AddCol failed! Should be  {4, 6} but its" 
              << "{" << test_add->value[0] << ", " << test_add->value[1] << "}\n";
     }
+    delete test_add;
 
     cout << "Testing MatrixColProduct\n";
 
     float *matrixGrad = new float[4];
     Matrix* abcd = new Matrix("abcd", 2, 2);
     abcd->loadValues({1,-1,-1, 1});
+    xy = new Col("xy", 2);
+    xy->loadValues({ 1.0, 2.0});
     cudaMemcpy(matrixGrad, abcd->d_grad, 4 * sizeof(float), cudaMemcpyDeviceToHost);
 
     cout << "Matrix grad\n"
@@ -84,6 +96,7 @@ int main() {
         cout << "MatrixColProduct failed! Should be  {-1, 1} but its" 
              << "{" << test_matCol->value[0] << ", " << test_matCol->value[1] << "}\n";
     }
+    delete test_matCol;
 
     cout << "Testing Leaky ReLU\n";
 
@@ -95,6 +108,7 @@ int main() {
 
     cout << relu->value[0] << ", " << relu->value[1] << ", " << relu->value[2] << ", " << relu->value[3]
          << "\n";
+    delete relu;
 
     cout << "some Grad tests...\n";
 
@@ -118,6 +132,7 @@ int main() {
     cout << "I'm expecting that d/dx (x^2) at x=9 is 18, but I computed: " << *grad << ".\n";
 
     delete grad;
+    delete f;
     
     cout << "Convolution tests...\n";
     Matrix* inputValues = new Matrix("input", 3, 3);
@@ -134,9 +149,6 @@ int main() {
     float* testkernel = new float[conv->unrKrnlCols * conv->unrKrnlRows];
     cudaMemcpy(testkernel, conv->d_kernel, sizeof(float)*conv->unrKrnlCols*conv->unrKrnlRows, cudaMemcpyDeviceToHost);
 
-    cout << "unrolled kernel looks like \n";
-    outputMatrix(cout, testkernel, conv->unrKrnlRows, conv->unrKrnlCols);
-    cout << "end unrolled kernel\n";
 
 
     conv->compute(&cublasH);
@@ -170,9 +182,6 @@ int main() {
     testkernel = new float[conv->unrKrnlCols * conv->unrKrnlRows];
     cudaMemcpy(testkernel, conv->d_kernel, sizeof(float)*conv->unrKrnlCols*conv->unrKrnlRows, cudaMemcpyDeviceToHost);
 
-    cout << "unrolled kernel looks like \n";
-    outputMatrix(cout, testkernel, conv->unrKrnlRows, conv->unrKrnlCols);
-    cout << "end unrolled kernel\n";
 
     conv->compute(&cublasH);
     testvalues = new float[4];
@@ -188,10 +197,109 @@ int main() {
     delete testvalues;
     delete testkernel;
     delete conv;
+    cout << "PASSED!\n";
+
+    cout << "Okay, now testing Convolution gradients...\n";
+
+    inputValues = new Matrix("input", 2, 2);
+    kernel = new Matrix("kernel", 2, 2);
+    inputValues->loadValues({1,2,3,4});
+    kernel->loadValues({3,3,3,3});
+    conv = new Convolution(inputValues, kernel, 0, 1, 0, 1);
+
+    conv->compute(&cublasH);
+    conv->computeGrad(&cublasH);
+
+    testvalues = new float[4];
+    cudaMemcpy(testvalues, kernel->d_grad, sizeof(float)*4, cudaMemcpyDeviceToHost);
+    if(testvalues[0] != 1 || testvalues[1] != 2 || testvalues[2] != 3 || testvalues[3] != 4) {
+        cout << "Convolution gradient failed!  The kernel grad should be \n"
+             << "( 1, 2\n"
+             << "  3, 4)\nBut it is\n";
+        outputMatrix(cout, testvalues, 2, 2);
+    }
+    delete testvalues;
+    testvalues = new float[4];
+    cudaMemcpy(testvalues, inputValues->d_grad, sizeof(float)*4, cudaMemcpyDeviceToHost);
+    if(testvalues[0] != 3 || testvalues[1] != 3 || testvalues[2] != 3 || testvalues[3] != 3) {
+        cout << "Convolution gradient failed!  The matrix grad should be \n"
+             << "( 3, 3\n"
+             << "  3, 3)\nBut it is\n";
+        outputMatrix(cout, testvalues, 2, 2);
+    }
+
+    delete testvalues;
+    delete conv;
+
+    cout << "more grad tests...\n";
+
+    Matrix* id3 = new Matrix("id3", 3, 3);
+    id3->loadValues({1,0,0,0,1,0,0,0,1});
+
+    Matrix* k2  = new Matrix("k2", 2, 2);
+    k2->loadValues({0,1,1,0});
+
+    Col* v = new Col("v", 2);
+    v->loadValues({1,1});
+
+    Convolution* c2 = new Convolution(id3, k2, 0, 1, 0, 1);
+    MatrixColProduct* p = new MatrixColProduct(c2, v);
+    InnerProduct* f1 = new InnerProduct(p,p);
+
+    f1->compute(&cublasH);
+    f1->computeGrad(&cublasH);
+
+    float* testvalue = new float[1];
+    cudaMemcpy(testvalue, f1->d_value, sizeof(float), cudaMemcpyDeviceToHost);
+    if(*testvalue != 2) {
+        cout << "expecting a value of 2 but it is " << *testvalue << "\n";
+    }
+
+    float* testgrad = new float[4];
+    cudaMemcpy(testgrad, k2->d_grad, sizeof(float)*4, cudaMemcpyDeviceToHost);
+    if(testgrad[0] != 4 || testgrad[1] != 2 || testgrad[2] != 2 || testgrad[3] != 4) {
+        cout << "Convlution gradient failed! the kernel grad should be \n"
+             << "( 4, 2\n"
+             << "  2, 4\nbut it is\n";
+        outputMatrix(cout, testgrad, 2, 2);
+    }
+    delete testgrad;
+    delete testvalue;
+    delete f1;
+
+    id3 = new Matrix("id3-2", 2, 2);
+    id3->loadValues({0,1,-1,0});
+
+    k2 = new Matrix("k2-2", 2,2);
+    k2->loadValues({5,6,9,3});
+
+    Matrix* k3 = new Matrix("k3", 2,2);
+    k3->loadValues({1,1,1,1});
+
+    c2 = new Convolution(id3, k2, 1, 2, 1, 2);
+    Convolution* f2 = new Convolution(c2, k3, 0, 1, 0, 1);
+
+    f2->compute(&cublasH);
+    f2->computeGrad(&cublasH);
+
+    testgrad = new float[4];
+    cudaMemcpy(testgrad, k2->d_grad, sizeof(float)*4, cudaMemcpyDeviceToHost);
+    if(testgrad[0] != 0 || testgrad[1] != -1 || testgrad[2] != 1 || testgrad[3] != 0) {
+        cout << "Convlution gradient failed! the kernel grad should be \n"
+             << "( 0, -1\n"
+             << "  1, 0\nbut it is\n";
+        outputMatrix(cout, testgrad, 2, 2);
+    }
+    delete testgrad;
+    delete f2;
+
+
+     
 
 
 
 
+    cublasDestroy(cublasH);
 
 
 }

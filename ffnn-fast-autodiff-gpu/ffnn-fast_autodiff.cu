@@ -138,5 +138,6 @@ int main() {
     }
 
     delete errorFunc;
+    cublasDestroy(cublasH);
 
 }
