@@ -293,13 +293,65 @@ int main() {
     delete testgrad;
     delete f2;
 
+    cout << "PASSED!\n";
 
-     
+    cout << "Now testing MaxPool...\n";
 
+    Matrix *m = new Matrix("m", 2, 2);
+    m->loadValues({1,2,3,4});
 
+    MaxPool *mp = new MaxPool(m, 2, 2, 1, 1);
+    mp->compute(&cublasH);
 
+    testvalue = new float[1];
+    cudaMemcpy(testvalue, mp->d_value, sizeof(float), cudaMemcpyDeviceToHost);
+    if(*testvalue != 4){
+        cout << "MaxPool test failed.  expecting 4, the results was " << *testvalue << ".\n";
+    }
+
+    delete mp;
+    delete testvalue;
+
+    m = new Matrix("m-1", 4, 4);
+    m->loadValues({1, 2, 1, 2,
+                   3, 9, 16, 3,
+                   1, 10,4, 1,
+                   3, 4, 2, 3});
+    
+    mp = new MaxPool(m, 2, 2, 2, 2);
+    mp->compute(&cublasH);
+
+    testvalue = new float[4];
+    cudaMemcpy(testvalue, mp->d_value, sizeof(float)*4, cudaMemcpyDeviceToHost);
+    if(testvalue[0] != 9 || testvalue[1] != 16 || testvalue[2] != 10 || testvalue[3] != 4) {
+        cout << "MaxPool test failed.  expected \n"
+             << "( 9, 16\n"
+             << "  10, 4)\nbut got\n";
+        outputMatrix(cout, testvalue, 2, 2);
+    }
+
+    delete testvalue;
+    delete mp;
+    cout << "now testing gradients...\n";
+
+    m = new Matrix("m-2", 2,2);
+    m->loadValues({1,1,1,4});
+    mp = new MaxPool(m, 2,2,1,1);
+    
+    Scalar* smp = new Scalar(mp, 5);
+    smp->compute(&cublasH);
+    smp->computeGrad(&cublasH);
+
+    testvalue = new float[4];
+    cudaMemcpy(testvalue, m->d_grad, sizeof(float)*4, cudaMemcpyDeviceToHost);
+    if(testvalue[0] != 0 || testvalue[1] != 0 || testvalue[2] != 0 || testvalue[3] != 5) {
+        cout << "MaxPool grad test failed.  expected \n"
+             << "( 0, 0\n"
+             << "  0, 5)\nbut got\n";
+        outputMatrix(cout, testvalue, 2, 2);
+    }
+    delete testvalue;
+    delete smp;
 
     cublasDestroy(cublasH);
-
-
 }

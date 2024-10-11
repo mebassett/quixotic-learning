@@ -383,7 +383,7 @@ void Scalar::compute(cublasHandle_t *handle) {
 
 }
 
-Scalar::Scalar(AbstractCol* _col, float _scalar)
+Scalar::Scalar(AD* _col, float _scalar)
     : col(_col)
     , scalar(_scalar)
     , AbstractCol( "Scalar of (" + _col->name + ") by "+ to_string(_scalar), _col->rows) {
@@ -589,56 +589,6 @@ void Convolution::resetGrad() {
 }
 
 
-// __global__ void doConvolution(int targetRows, int targetCols,
-//                               int multiplicandRows, int multiplicandCols,
-//                               int rowPadding, int rowSkip, int kernelRows,
-//                               int colPadding, int colSkip, int kernelCols,
-//                               float* multiplicand,
-//                               float* kernel,
-//                               float* result) {
-//     int trow = blockIdx.y * blockDim.y + threadIdx.y;
-//     int tcol = blockIdx.x * blockDim.x + threadIdx.x;
-//     if(trow < targetRows && tcol < targetCols) {
-//         float val = 0;
-//         int mrow = - rowPadding + rowSkip * trow;
-//         int mcol = - colPadding + colSkip * tcol;
-// 
-//         for(int i =mrow; i < mrow + kernelRows; i++)
-//             for(int j =mcol; j< mcol + kernelCols; j++) 
-//                 if(i >= 0 && j >= 0 && i < multiplicandRows && j < multiplicandCols) {
-//                     int mIndex = multiplicandCols * i + j;
-//                     int kIndex = kernelCols * (i-mrow) + (j-mcol);   
-//                     val += multiplicand[mIndex] * kernel[kIndex];
-//                 }
-//         
-// 
-//         result[targetCols * trow + tcol] = val;
-//     }
-// }
-// 
-// 
-// void Convolution::compute(cublasHandle_t *handle) {
-//     this->multiplicand->compute(handle);
-//     this->kernel->compute(handle);
-//     cudaError_t err; 
-//     dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
-//     dim3 bd(32, 32, 1);
-//     doConvolution<<<gd, bd>>>(this->rows, this->cols,
-//                               this->multiplicand->rows, this->multiplicand->cols,
-//                               this->rowPadding, this->rowSkip, this->kernel->rows,
-//                               this->colPadding, this->colSkip, this->kernel->cols,
-//                               this->multiplicand->d_value,
-//                               this->kernel->d_value,
-//                               this->d_value );
-//     err = cudaGetLastError();
-//     if(err != cudaSuccess) {
-//         printf("Kernel launch error in Convolution::compute: %s\n", cudaGetErrorString(err));
-//         exit(1);
-//     }
-// 
-//     cudaDeviceSynchronize();
-// }
-//
 __global__ void doKernelRoll(float* matrix, float* kernel,
                          int kernelRows, int kernelCols,
                          int mCols, int mRows,
@@ -792,6 +742,126 @@ Convolution::~Convolution() {
     delete this->kernel;
     cudaFree(this->d_kernel);
     cudaFree(this->d_input);
+}
+
+void MaxPool::resetGrad() {
+    AD::resetGrad();
+    this->matrix->resetGrad();
+
+}
+
+__global__ void doMaxPoolGrad(int targetRows, int targetCols,
+                              int matrixRows, int matrixCols,
+                              int rowSkip, int height,
+                              int colSkip, int width,
+                              float* matrix,
+                              float* value,
+                              float* seed,
+                              float* result) {
+    int trow = blockIdx.y * blockDim.y + threadIdx.y;
+    int tcol = blockIdx.x * blockDim.x + threadIdx.x;
+    int tIndex = targetCols * trow + tcol;
+    if(trow < targetRows && tcol < targetCols) {
+        int mrow = rowSkip * trow;
+        int mcol = colSkip * tcol;
+
+        float val = seed[tIndex] ;
+
+        for(int i =mrow; i < mrow + height; i++)
+            for(int j =mcol; j< mcol + width; j++) 
+                if(i >= 0 && j >= 0 && i < matrixRows && j < matrixCols) {
+                    int mIndex = matrixCols * i + j;
+                    result[mIndex] = val * ( matrix[mIndex] == value[tIndex]);
+                }
+    }
+}
+
+void MaxPool::pushGrad(cublasHandle_t *handle, float* d_seed) {
+    float* d_grad;
+    cudaMalloc((void**) &d_grad, sizeof(float) * rows * cols);
+
+    cudaError_t err; 
+    dim3 gd(ceil(cols/32.0), ceil(rows/32.0), 1);
+    dim3 bd(32, 32, 1);
+    doMaxPoolGrad<<<gd, bd>>>(rows, cols,
+                              matrix->rows, matrix->cols,
+                              rowSkip, height,
+                              colSkip, width,
+                              matrix->d_value,
+                              d_value,
+                              d_seed,
+                              d_grad );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in MaxPool::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+    cudaDeviceSynchronize();
+
+    this->matrix->pushGrad(handle, d_grad);
+    cudaFree(d_seed);
+}
+
+
+__global__ void doMaxPool(int targetRows, int targetCols,
+                          int matrixRows, int matrixCols,
+                          int rowSkip, int height,
+                          int colSkip, int width,
+                          float* matrix,
+                          float* result) {
+    int trow = blockIdx.y * blockDim.y + threadIdx.y;
+    int tcol = blockIdx.x * blockDim.x + threadIdx.x;
+    if(trow < targetRows && tcol < targetCols) {
+        float val = -9999;
+        int mrow = rowSkip * trow;
+        int mcol = colSkip * tcol;
+
+        for(int i =mrow; i < mrow + height; i++)
+            for(int j =mcol; j< mcol + width; j++) 
+                if(i >= 0 && j >= 0 && i < matrixRows && j < matrixCols) {
+                    int mIndex = matrixCols * i + j;
+                    if(matrix[mIndex] > val) 
+                        val = matrix[mIndex];
+                }
+        
+
+        result[targetCols * trow + tcol] = val;
+    }
+}
+ 
+void MaxPool::compute(cublasHandle_t *handle) {
+    this->matrix->compute(handle);
+    cudaError_t err; 
+    dim3 gd(ceil(this->cols/32.0), ceil(this->rows/32.0), 1);
+    dim3 bd(32, 32, 1);
+    doMaxPool<<<gd, bd>>>(this->rows, this->cols,
+                          this->matrix->rows, this->matrix->cols,
+                          this->rowSkip, this->height,
+                          this->colSkip, this->width,
+                          this->matrix->d_value,
+                          this->d_value );
+    err = cudaGetLastError();
+    if(err != cudaSuccess) {
+        printf("Kernel launch error in MaxPool::compute: %s\n", cudaGetErrorString(err));
+        exit(1);
+    }
+
+    cudaDeviceSynchronize();
+}
+
+MaxPool::MaxPool(AD* m, unsigned int width, unsigned int height,
+            unsigned int rowSkip, unsigned int colSkip) 
+    : matrix(m)
+    , width(width)
+    , height(height)
+    , rowSkip(rowSkip)
+    , colSkip(colSkip)
+    , AD("MaxPool of "+m->name, (m->rows - height)/rowSkip +1
+        , (m->cols - width)/colSkip +1) {
+    }
+MaxPool::~MaxPool() {
+    delete this->matrix;
 }
 
 }

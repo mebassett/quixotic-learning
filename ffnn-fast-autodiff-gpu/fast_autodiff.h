@@ -64,12 +64,12 @@ struct ColLeakyReLU : AbstractCol {
 };
 
 struct Scalar : AbstractCol {
-    AbstractCol* col;
+    AD* col;
     float scalar;
     void resetGrad() override;
     void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle) override;
-    Scalar(AbstractCol* _col, float _scalar);
+    Scalar(AD* _col, float _scalar);
     ~Scalar() override;
 };
 
@@ -118,6 +118,25 @@ struct Convolution : AD {
                 unsigned int rowPadding, unsigned int rowSkip,
                 unsigned int colPadding, unsigned int colSkip);
     ~Convolution() override;
+
+};
+
+struct MaxPool : AD {
+    AD* matrix;
+    
+    unsigned int rowSkip;
+    unsigned int colSkip;
+
+    unsigned int width;
+    unsigned int height;
+
+    void resetGrad();
+    void pushGrad(cublasHandle_t *handle, float* d_seed) override;
+    void compute(cublasHandle_t *handle);
+
+    MaxPool(AD* m, unsigned int width, unsigned int height,
+            unsigned int rowSkip, unsigned int colSkip);
+    ~MaxPool() override;
 
 };
 
