@@ -57,7 +57,7 @@ void AD::computeGrad(cublasHandle_t *handle) {
     int size = this->rows * this->cols * sizeof(float);
     err = cudaMalloc((void**) &seed, size);
     if(err != cudaSuccess) {
-        printf("malloc error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
+        printf("malloc error in AD::computeGrad: %s\n", cudaGetErrorString(err));
         exit(1);
     }
     
@@ -71,7 +71,7 @@ void AD::computeGrad(cublasHandle_t *handle) {
     
     err = cudaDeviceSynchronize();
     if(err != cudaSuccess) {
-        printf("sync error in Scalar::computeGrad: %s\n", cudaGetErrorString(err));
+        printf("sync error in AD::computeGrad: %s\n", cudaGetErrorString(err));
         exit(1);
     }
 
@@ -252,7 +252,7 @@ void MatrixColProduct::compute(cublasHandle_t *handle) {
 
 }
 
-MatrixColProduct::MatrixColProduct(AD* m, AbstractCol* x)
+MatrixColProduct::MatrixColProduct(AD* m, AD* x)
     : AbstractCol("Matrix product of " + m->name + " and " + x->name, m->rows)
     , matrix(m)
     , col(x) {
@@ -277,12 +277,14 @@ void ColLeakyReLU::resetGrad() {
 
 __global__
 void doComponentProduct( int rows
+                       , int cols
                        , float* grad
                        , float* seed
                        , float* result ) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
-    if( row < rows) {
-        result[row] = seed[row] * grad[row];
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+    if( row < rows && col < cols) {
+        result[row*cols + col] = seed[row*cols+col] * grad[row*cols+col];
     }
 
 }
@@ -291,12 +293,12 @@ void ColLeakyReLU::pushGrad(cublasHandle_t *handle, float* d_seed) {
     float* newSeed;
     cudaError_t err;
 
-    cudaMalloc((void**) &newSeed, this->rows * sizeof(float));
+    cudaMalloc((void**) &newSeed, cols * rows * sizeof(float));
 
-    dim3 bd(1, 1024, 1);
-    dim3 gd(1, ceil((this->col->rows)/1024.0), 1);
+    dim3 bd(32, 32, 1);
+    dim3 gd(ceil(col->cols/32.0), ceil(col->rows/32.0), 1);
 
-    doComponentProduct<<<gd, bd>>>(this->rows, this->d_grad, d_seed, newSeed);
+    doComponentProduct<<<gd, bd>>>(rows, cols, d_grad, d_seed, newSeed);
     err = cudaGetLastError();
     if(err != cudaSuccess) {
         printf("Kernel launch error in ColLeakyReLU::pushGrad: %s\n", cudaGetErrorString(err));
@@ -333,10 +335,10 @@ void ColLeakyReLU::compute(cublasHandle_t *handle) {
     this->col->compute(handle);
     cudaError_t err;
 
-    dim3 bd (1, 1024, 1);
-    dim3 gd (1, ceil((this->col->rows)/1024.0), 1);
+    dim3 bd (32, 32, 1);
+    dim3 gd (ceil(col->cols/32.0), ceil(col->rows/32.0), 1);
 
-    doLeakyReLU<<<gd, bd>>>( this->col->rows, 1, this->d_grad, this->col->d_value, this->d_value);
+    doLeakyReLU<<<gd, bd>>>( col->rows, col->cols, d_grad, col->d_value, d_value);
     err = cudaGetLastError();
     if(err != cudaSuccess) {
         printf("Kernel launch error in ColLeakyReLU::compute: %s\n", cudaGetErrorString(err));
@@ -348,9 +350,9 @@ void ColLeakyReLU::compute(cublasHandle_t *handle) {
 
 }
 
-ColLeakyReLU::ColLeakyReLU(AbstractCol* _col)
+ColLeakyReLU::ColLeakyReLU(AD* _col)
     : col(_col)
-    , AbstractCol( "ReLU of " + _col->name, _col->rows) {
+    , AD( "ReLU of " + _col->name, _col->rows, _col->cols) {
 }
 
 ColLeakyReLU::~ColLeakyReLU() {
@@ -366,9 +368,9 @@ void Scalar::resetGrad() {
 
 void Scalar::pushGrad(cublasHandle_t *handle, float* d_seed) {
     float *newSeed;
-    cudaMalloc((void**) &newSeed, this->col->rows * sizeof(float));
-    cublasScopy(*handle, this->col->rows, d_seed, 1, newSeed, 1);
-    cublasSscal(*handle, this->col->rows, &(this->scalar), newSeed, 1);
+    cudaMalloc((void**) &newSeed, col->cols * col->rows * sizeof(float));
+    cublasScopy(*handle, col->cols * col->rows, d_seed, 1, newSeed, 1);
+    cublasSscal(*handle, col->cols * col->rows, &(this->scalar), newSeed, 1);
 
     cudaFree(d_seed);
     this->col->pushGrad(handle, newSeed);
@@ -378,15 +380,15 @@ void Scalar::pushGrad(cublasHandle_t *handle, float* d_seed) {
 void Scalar::compute(cublasHandle_t *handle) {
     this->col->compute(handle);
 
-    cublasScopy(*handle, this->col->rows, this->col->d_value, 1, this->d_value, 1);
-    cublasSscal(*handle, this->col->rows, &(this->scalar), this->d_value,1);
+    cublasScopy(*handle, col->cols * col->rows, col->d_value, 1, d_value, 1);
+    cublasSscal(*handle, col->cols * col->rows, &(this->scalar), d_value,1);
 
 }
 
 Scalar::Scalar(AD* _col, float _scalar)
     : col(_col)
     , scalar(_scalar)
-    , AbstractCol( "Scalar of (" + _col->name + ") by "+ to_string(_scalar), _col->rows) {
+    , AD( "Scalar of (" + _col->name + ") by "+ to_string(_scalar), _col->rows, _col->cols) {
 }
 
 Scalar::~Scalar() {
@@ -394,41 +396,41 @@ Scalar::~Scalar() {
 }
 
 
-void AddCol::resetGrad() {
+void Add::resetGrad() {
     AD::resetGrad();
     this->col1->resetGrad();
     this->col2->resetGrad();
 }
 
-void AddCol::pushGrad(cublasHandle_t *handle, float* d_seed) {
+void Add::pushGrad(cublasHandle_t *handle, float* d_seed) {
     float* copySeed ;
-    cudaMalloc((void**) &copySeed, this->col1->rows * sizeof(float));
-    cudaMemcpy(copySeed, d_seed, this->col1->rows * sizeof(float), cudaMemcpyDeviceToDevice);
+    cudaMalloc((void**) &copySeed, col1->rows * col1->cols * sizeof(float));
+    cudaMemcpy(copySeed, d_seed, col1->rows * col1->cols * sizeof(float), cudaMemcpyDeviceToDevice);
     this->col1->pushGrad(handle, d_seed);
     this->col2->pushGrad(handle, copySeed);
 }
 
 
-void AddCol::compute(cublasHandle_t *handle) {
+void Add::compute(cublasHandle_t *handle) {
     this->col1->compute(handle);
     this->col2->compute(handle);
     float alpha = 1;
 
-    cublasScopy(*handle, this->col1->rows, this->col1->d_value, 1, this->d_value, 1);
+    cublasScopy(*handle, col1->rows * col1->cols, col1->d_value, 1, d_value, 1);
 
-    cublasSaxpy(*handle, this->col1->rows, &alpha, this->col2->d_value, 1, this->d_value, 1);
+    cublasSaxpy(*handle, col1->rows * col1->cols, &alpha, col2->d_value, 1, d_value, 1);
 
 
 
 }
 
-AddCol::AddCol(AbstractCol* _col1, AbstractCol* _col2) 
+Add::Add(AD* _col1, AD* _col2) 
     : col1(_col1)
     , col2(_col2)
-    , AbstractCol("Sum of (" + _col1->name + ") and (" + _col2->name + ")", _col1->rows) {
+    , AD("Sum of (" + _col1->name + ") and (" + _col2->name + ")", _col1->rows, _col1->cols) {
 }
 
-AddCol::~AddCol() {
+Add::~Add() {
     if( this->col1 == this->col2) {
         delete this->col1;
     } else {
@@ -480,10 +482,15 @@ void InnerProduct::compute(cublasHandle_t *handle) {
 
 }
 
-InnerProduct::InnerProduct(AbstractCol* _col1, AbstractCol* _col2) 
+InnerProduct::InnerProduct(AD* _col1, AD* _col2) 
     : col1(_col1)
     , col2(_col2)
     , AbstractCol("Inner Product of (" + _col1->name + ") and (" + _col2->name + ")", 1) {
+    if(_col1->cols > 1 || _col2->cols > 1) {
+        cout << "Error in InnerProduct Constructor with " << _col1->name << ", " + _col2->name + ".\n";
+        cout << "ADs must only have a single column, ie must be column vectors.";
+        exit(1);
+    }
 }
 
 InnerProduct::~InnerProduct() {

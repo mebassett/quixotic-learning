@@ -45,25 +45,26 @@ struct Matrix : AD {
 
 struct MatrixColProduct : AbstractCol {
     AD* matrix;
-    AbstractCol* col;
+    AD* col;
     void resetGrad() override;
     void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle) override;
-    MatrixColProduct(AD* m, AbstractCol* x);
+    MatrixColProduct(AD* m, AD* x);
     ~MatrixColProduct() override;
 };
 
-struct ColLeakyReLU : AbstractCol {
-    AbstractCol* col;
+struct ColLeakyReLU : AD {
+    AD* col;
     void resetGrad() override;
     void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle) override;
-    ColLeakyReLU(AbstractCol* _col);
+    ColLeakyReLU(AD* _col);
     ~ColLeakyReLU() override;
 
 };
 
-struct Scalar : AbstractCol {
+
+struct Scalar : AD {
     AD* col;
     float scalar;
     void resetGrad() override;
@@ -73,23 +74,23 @@ struct Scalar : AbstractCol {
     ~Scalar() override;
 };
 
-struct AddCol : AbstractCol {
-    AbstractCol* col1;
-    AbstractCol* col2;
+struct Add : AD {
+    AD* col1;
+    AD* col2;
     void resetGrad() override;
     void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle) override;
-    AddCol(AbstractCol* _col1, AbstractCol* _col2);
-    ~AddCol() override;
+    Add(AD* _col1, AD* _col2);
+    ~Add() override;
 };
 
 struct InnerProduct : AbstractCol {
-    AbstractCol* col1;
-    AbstractCol* col2;
+    AD* col1;
+    AD* col2;
     void resetGrad() override;
     void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle) override;
-    InnerProduct(AbstractCol* _col1, AbstractCol* _col2);
+    InnerProduct(AD* _col1, AD* _col2);
     ~InnerProduct() override;
 };
 

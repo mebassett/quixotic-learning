@@ -45,19 +45,19 @@ int main() {
     }
     delete test_ip;
 
-    cout << "Testing AddCol \n";
+    cout << "Testing Add \n";
 
     
     xy = new Col("xy", 2);
     xy->loadValues({ 1.0, 2.0});
     ab = new Col("ab", 2);
     ab->loadValues({3.0, 4.0});
-    AddCol* test_add = new AddCol(xy, ab);
+    Add* test_add = new Add(xy, ab);
     test_add->compute(&cublasH);
     test_add->fromDevice();
 
     if (test_add->value[0] != 4 || test_add->value[1] != 6 ) {
-        cout << "AddCol failed! Should be  {4, 6} but its" 
+        cout << "Add failed! Should be  {4, 6} but its" 
              << "{" << test_add->value[0] << ", " << test_add->value[1] << "}\n";
     }
     delete test_add;

@@ -62,7 +62,7 @@ int main() {
 
      MatrixColProduct* predictor = new MatrixColProduct (w2, new ColLeakyReLU(new MatrixColProduct(w1, featureInput)));
 
-    AddCol* termError = new AddCol(targetInput, new Scalar(predictor, -1.0));
+    Add* termError = new Add(targetInput, new Scalar(predictor, -1.0));
 
     Scalar* errorFunc = new Scalar(new InnerProduct(termError, termError), 0.5); 
     
