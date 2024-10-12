@@ -409,7 +409,7 @@ int main() {
     Col* v4 = new Col("v4", 2);
     v4->loadValues({3,5});
 
-    ConcatCol* v2v3 = new ConcatCol({v2, v3});
+    AD* v2v3 = new ConcatCol({v2, v3});
 
     flatF = new InnerProduct(v2v3, v4);
     flatF->compute(&cublasH);

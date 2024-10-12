@@ -23,5 +23,6 @@ typedef vector<Training_Datum> Training_Data ;
 
 valarray<float> to_model_output(int in) ;
 Training_Data load_data_from_file(string filename, int cutoff) ;
+Training_Data load_data_from_file_no_bias(string filename, int cutoff) ;
 }
 #endif /* MNISTDATA_H */
