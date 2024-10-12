@@ -27,12 +27,18 @@ AD::AD(string _name, unsigned int _rows, unsigned int _cols)
     : name(_name)
     , rows(_rows)
     , cols(_cols) {
+    initCuda = true;
     cudaMalloc((void**) &this->d_value, _rows * _cols * sizeof(float));
     cudaMalloc((void**) &this->d_grad, _rows * _cols * sizeof(float));
     this->value = new float[_rows * _cols];
     this->resetGrad();
 
 }
+AD::AD() {
+    initCuda = false;
+}
+
+
 
 void AD::fromDevice() {
     cudaError_t err;
@@ -78,9 +84,11 @@ void AD::computeGrad(cublasHandle_t *handle) {
 }
 
 AD::~AD() {
-    cudaFree(this->d_grad);
-    cudaFree(this->d_value);
-    delete [] this->value;
+    if(initCuda) { 
+        cudaFree(this->d_grad);
+        cudaFree(this->d_value);
+        delete [] this->value;
+    }
 }
 
 
@@ -97,6 +105,9 @@ void AD::pushGrad(cublasHandle_t *handle, float* d_seed) {
 
 AbstractCol::AbstractCol(string _name, unsigned int _rows)
     : AD(_name, _rows, 1) {
+}
+AbstractCol::AbstractCol() {
+    initCuda = false;
 }
 
 
@@ -163,6 +174,31 @@ void Matrix::loadValues(valarray<float> newValues) {
 Matrix::Matrix(string _name, unsigned int _rows, unsigned int _cols)
     : AD(_name, _rows, _cols) {
 
+}
+
+void Flatten::resetGrad() {
+    source->resetGrad();
+}
+
+void Flatten::pushGrad(cublasHandle_t *handle, float* d_seed){
+    source->pushGrad(handle, d_seed);
+}
+
+void Flatten::compute(cublasHandle_t *handle) {
+    source->compute(handle);
+}
+
+Flatten::Flatten(AD* source) {
+    this->source = source;
+    name = source->name;
+    rows = source->rows * source->cols;
+    cols = 1;
+        this->d_value = source->d_value;
+        this->d_grad = source->d_grad;
+}
+
+Flatten::~Flatten() {
+    delete this->source;
 }
 
 
@@ -269,6 +305,8 @@ MatrixColProduct::~MatrixColProduct() {
     delete this->matrix;
     delete this->col;
 }
+
+
 
 void ColLeakyReLU::resetGrad() {
     AD::resetGrad();
@@ -785,7 +823,7 @@ __global__ void doMaxPoolGrad(int targetRows, int targetCols,
 
 void MaxPool::pushGrad(cublasHandle_t *handle, float* d_seed) {
     float* d_grad;
-    cudaMalloc((void**) &d_grad, sizeof(float) * rows * cols);
+    cudaMalloc((void**) &d_grad, sizeof(float) * matrix->rows * matrix->cols);
 
     cudaError_t err; 
     dim3 gd(ceil(cols/32.0), ceil(rows/32.0), 1);

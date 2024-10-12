@@ -13,6 +13,7 @@ std::ostream& outputMatrix(std::ostream& os, float* m, unsigned int rows, unsign
 
 struct AD {
     std::string name;
+    bool initCuda;
     unsigned int rows;
     unsigned int cols;
     float* d_grad;
@@ -24,12 +25,14 @@ struct AD {
     virtual void pushGrad(cublasHandle_t *handle, float* seed);
     void computeGrad(cublasHandle_t *handle );
     AD(std::string _name, unsigned int _rows, unsigned int _cols);
+    AD();
     virtual ~AD();
 } ;
 
 
 struct AbstractCol : AD {
     AbstractCol(std::string _name, unsigned int _rows);
+    AbstractCol();
 };
 
 struct Col : AbstractCol {
@@ -41,6 +44,15 @@ struct Matrix : AD {
     void loadValues(std::valarray<float> newValues);
     void gradDescent(cublasHandle_t *handle, float learningRate);
     Matrix(std::string _name, unsigned int _rows, unsigned int _cols);
+};
+
+struct Flatten : AbstractCol {
+    AD* source;
+    void resetGrad() override;
+    void pushGrad(cublasHandle_t *handle, float* d_seed) override;
+    void compute(cublasHandle_t *handle) override;
+    Flatten(AD* source);
+    ~Flatten() override;
 };
 
 struct MatrixColProduct : AbstractCol {

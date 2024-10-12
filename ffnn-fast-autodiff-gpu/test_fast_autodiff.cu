@@ -263,7 +263,7 @@ int main() {
              << "  2, 4\nbut it is\n";
         outputMatrix(cout, testgrad, 2, 2);
     }
-    delete testgrad;
+    delete []testgrad;
     delete testvalue;
     delete f1;
 
@@ -290,7 +290,7 @@ int main() {
              << "  1, 0\nbut it is\n";
         outputMatrix(cout, testgrad, 2, 2);
     }
-    delete testgrad;
+    delete [] testgrad;
     delete f2;
 
     cout << "PASSED!\n";
@@ -350,8 +350,57 @@ int main() {
              << "  0, 5)\nbut got\n";
         outputMatrix(cout, testvalue, 2, 2);
     }
-    delete testvalue;
+    delete [] testvalue;
     delete smp;
+
+    cout << "now testing Flatten and its gradients...\n";
+
+    m = new Matrix("m-3", 2, 2);
+    m->loadValues({1,2,3,4});
+
+    Flatten* flat = new Flatten(m);
+    InnerProduct* flatF = new InnerProduct(flat, flat);
+    flatF->compute(&cublasH);
+
+    testvalue = new float[1];
+    cudaMemcpy(testvalue, flatF->d_value, sizeof(float), cudaMemcpyDeviceToHost);
+    if(*testvalue != 1.0 + 4 + 9 + 16) {
+        cout << "Flatten failed.  expect 30 but got " << testvalue << "\n";
+    }
+    delete testvalue;
+    delete flatF;
+
+    m = new Matrix("m-4", 3, 3);
+    m->loadValues({1,2,3,4,5,6,7,8,9});
+
+    Matrix* k4 = new Matrix("k4", 2, 2);
+    k4->loadValues({1,1,1,1});
+
+    Col* v1 = new Col("v1", 4);
+    v1->loadValues({1,2,3,4});
+
+    Convolution* c1 = new Convolution(m, k4, 0, 1, 0, 1);
+    flat = new Flatten(c1);
+    flatF = new InnerProduct(flat, v1);
+    flatF->compute(&cublasH);
+    flatF->computeGrad(&cublasH);
+
+    testvalue = new float[9];
+    cudaMemcpy(testvalue, m->d_grad, 9*sizeof(float), cudaMemcpyDeviceToHost);
+    if(testvalue[0] != 1 || testvalue[1] != 3 || testvalue[2] != 2
+      || testvalue[3] != 4 || testvalue[4] != 10 || testvalue[5] != 6
+      || testvalue[6] != 3 || testvalue[7] != 7 || testvalue[8] != 4) {
+        cout << "Flatten grad test failed.  expected \n"
+             << "( 1, 3 , 2 \n"
+             << "  4, 10, 6\n"
+             << "  3, 7 , 4)\nbut got\n";
+        outputMatrix(cout, testvalue, 3, 3);
+    }
+    delete flatF;
+    delete [] testvalue;
+
+
+
 
     cublasDestroy(cublasH);
 }
