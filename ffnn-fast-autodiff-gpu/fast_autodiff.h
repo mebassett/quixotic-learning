@@ -2,6 +2,7 @@
 #ifndef FAST_AUTODIFF_H
 #define FAST_AUTODIFF_H
 #include <valarray>
+#include<vector>
 #include<utility>
 #include <iostream>
 #include <cublas_v2.h>
@@ -151,6 +152,15 @@ struct MaxPool : AD {
             unsigned int rowSkip, unsigned int colSkip);
     ~MaxPool() override;
 
+};
+
+struct ConcatCol : AD {
+    std::vector<AD*> cols;
+    void resetGrad() override;
+    void pushGrad(cublasHandle_t *handle, float* d_seed) override;
+    void compute(cublasHandle_t *handle);
+    ConcatCol(std::vector<AD*> cols);
+    ~ConcatCol() override; 
 };
 
 }

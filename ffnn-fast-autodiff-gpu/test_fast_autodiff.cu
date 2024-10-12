@@ -399,8 +399,37 @@ int main() {
     delete flatF;
     delete [] testvalue;
 
+    cout << "now testing ConcatCol...\n";
 
+    Col* v2 = new Col("v2", 1);
+    v2->loadValues({1});
+    Col* v3 = new Col("v3", 1);
+    v3->loadValues({2});
 
+    Col* v4 = new Col("v4", 2);
+    v4->loadValues({3,5});
+
+    ConcatCol* v2v3 = new ConcatCol({v2, v3});
+
+    flatF = new InnerProduct(v2v3, v4);
+    flatF->compute(&cublasH);
+
+    testvalue = new float[1];
+    cudaMemcpy(testvalue, flatF->d_value, sizeof(float), cudaMemcpyDeviceToHost);
+    if(*testvalue != 13) {
+        cout << "ConcatCol compute failed.  expecting 13 but got " << testvalue << ".\n";
+    }
+
+    flatF->computeGrad(&cublasH);
+
+    testgrad = new float[1];
+    cudaMemcpy(testgrad, v2->d_grad, sizeof(float), cudaMemcpyDeviceToHost);
+    if(*testgrad != 3) {
+        cout << "ConcatCol grad failed.  expecting 3 but got " << testvalue << ".\n";
+    }
+    delete flatF;
+    delete [] testvalue;
+    delete [] testgrad;
 
     cublasDestroy(cublasH);
 }

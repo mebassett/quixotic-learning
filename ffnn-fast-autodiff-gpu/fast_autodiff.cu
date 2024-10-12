@@ -1,5 +1,7 @@
 #include <iostream>
 #include <valarray>
+#include <numeric>
+#include <vector>
 #include <stdexcept>
 #include "fast_autodiff.h"
 #include <cublas_v2.h>
@@ -907,6 +909,45 @@ MaxPool::MaxPool(AD* m, unsigned int width, unsigned int height,
     }
 MaxPool::~MaxPool() {
     delete this->matrix;
+}
+
+// ConcatCol is a bit stupid, it's just moving memory around on
+// the gpu, which I am guessing is expensive and slow.
+// don't have a better idea atm.
+// Actually, a better idea would be to have ConcatCol somehow move the memory location of all of its cols to one continuous block, and then its d_value could just point to the start of that block.
+
+void ConcatCol::resetGrad() {
+    for_each(cols.begin(), cols.end(), [](AD* col) { col->resetGrad(); } );
+}
+
+void ConcatCol::pushGrad(cublasHandle_t *handle, float* d_seed) {
+    int memIndex = 0;
+    for(auto col : cols) {
+        float* d_seedPortion;
+        cudaMalloc((void**) &d_seedPortion, col->rows * sizeof(float));
+        cudaMemcpy(d_seedPortion, d_seed+memIndex, sizeof(float) * col->rows, cudaMemcpyDeviceToDevice);
+        memIndex = memIndex + col->rows;
+        col->pushGrad(handle, d_seedPortion);
+    }
+    cudaFree(d_seed);
+}
+
+void ConcatCol::compute(cublasHandle_t *handle) {
+    int memIndex = 0;
+    for(auto col : cols) {
+        col->compute(handle);
+        cudaMemcpy(d_value + memIndex, col->d_value, sizeof(float) * col->rows, cudaMemcpyDeviceToDevice);
+        memIndex = memIndex + col->rows;
+    }
+
+}
+
+ConcatCol::ConcatCol(vector<AD*> cols)
+  : cols(cols)
+  , AD("concat of multiple", accumulate(cols.begin(), cols.end(), 0, [](int t, AD* col){ return t+col->rows;}),1) {}
+
+ConcatCol::~ConcatCol() {
+    for_each(cols.begin(), cols.end(), [](AD* col) { delete col;});
 }
 
 }
