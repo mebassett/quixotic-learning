@@ -25,6 +25,7 @@ struct AD {
     virtual void resetGrad();
     virtual void pushGrad(cublasHandle_t *handle, float* seed);
     void computeGrad(cublasHandle_t *handle );
+    virtual void changeMemory(float* d_newMem);
     AD(std::string _name, unsigned int _rows, unsigned int _cols);
     AD();
     virtual ~AD();
@@ -52,6 +53,7 @@ struct Flatten : AbstractCol {
     void resetGrad() override;
     void pushGrad(cublasHandle_t *handle, float* d_seed) override;
     void compute(cublasHandle_t *handle) override;
+    void changeMemory(float* d_newMem) override;
     Flatten(AD* source);
     ~Flatten() override;
 };

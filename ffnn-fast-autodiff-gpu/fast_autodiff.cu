@@ -85,6 +85,11 @@ void AD::computeGrad(cublasHandle_t *handle) {
 
 }
 
+void AD::changeMemory(float* d_newMem) {
+    this->d_value = d_newMem;
+    initCuda = false;
+}
+
 AD::~AD() {
     if(initCuda) { 
         cudaFree(this->d_grad);
@@ -188,6 +193,13 @@ void Flatten::pushGrad(cublasHandle_t *handle, float* d_seed){
 
 void Flatten::compute(cublasHandle_t *handle) {
     source->compute(handle);
+}
+
+void Flatten::changeMemory(float* d_newMem) {
+    d_value = d_newMem;
+    source->d_value = d_newMem;
+    initCuda = false;
+    source->initCuda = false;
 }
 
 Flatten::Flatten(AD* source) {
@@ -911,10 +923,12 @@ MaxPool::~MaxPool() {
     delete this->matrix;
 }
 
-// ConcatCol is a bit stupid, it's just moving memory around on
-// the gpu, which I am guessing is expensive and slow.
-// don't have a better idea atm.
-// Actually, a better idea would be to have ConcatCol somehow move the memory location of all of its cols to one continuous block, and then its d_value could just point to the start of that block.
+
+// ConcatCol is slightly less stupid now, in that it keeps the values
+// in the same memory location and re-uses them.
+// This is hard to achieve with pushGrad however, as each member's
+// pushGrad is trying to cudaFree the seed.  So we are still doing stupid
+// copying to make it work.
 
 void ConcatCol::resetGrad() {
     for_each(cols.begin(), cols.end(), [](AD* col) { col->resetGrad(); } );
@@ -933,21 +947,30 @@ void ConcatCol::pushGrad(cublasHandle_t *handle, float* d_seed) {
 }
 
 void ConcatCol::compute(cublasHandle_t *handle) {
-    int memIndex = 0;
     for(auto col : cols) {
         col->compute(handle);
-        cudaMemcpy(d_value + memIndex, col->d_value, sizeof(float) * col->rows, cudaMemcpyDeviceToDevice);
-        memIndex = memIndex + col->rows;
     }
 
 }
 
 ConcatCol::ConcatCol(vector<AD*> cols)
   : cols(cols)
-  , AD("concat of multiple", accumulate(cols.begin(), cols.end(), 0, [](int t, AD* col){ return t+col->rows;}),1) {}
+  , AD("concat of multiple", accumulate(cols.begin(), cols.end(), 0, [](int t, AD* col){ return t+col->rows;}),1) {
+    int memIndex = 0;
+    cout << "rows: " << rows << "\n";
+    for (auto col : cols) {
+        cudaFree(col->d_value);
+        col->changeMemory(d_value + memIndex);
+        memIndex += col->rows;
+    }
+}
+
 
 ConcatCol::~ConcatCol() {
-    for_each(cols.begin(), cols.end(), [](AD* col) { delete col;});
+    for(auto col:cols){
+        cudaFree(col->d_grad);
+        delete col;
+    }
 }
 
 }
