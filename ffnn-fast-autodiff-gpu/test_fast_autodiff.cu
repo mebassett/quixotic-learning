@@ -402,14 +402,14 @@ int main() {
     cout << "now testing ConcatCol...\n";
 
     Col* v2 = new Col("v2", 1);
-    v2->loadValues({1});
     Col* v3 = new Col("v3", 1);
-    v3->loadValues({2});
 
     Col* v4 = new Col("v4", 2);
     v4->loadValues({3,5});
 
     AD* v2v3 = new ConcatCol({v2, v3});
+    v2->loadValues({1});
+    v3->loadValues({2});
 
     flatF = new InnerProduct(v2v3, v4);
     flatF->compute(&cublasH);
@@ -417,7 +417,7 @@ int main() {
     testvalue = new float[1];
     cudaMemcpy(testvalue, flatF->d_value, sizeof(float), cudaMemcpyDeviceToHost);
     if(*testvalue != 13) {
-        cout << "ConcatCol compute failed.  expecting 13 but got " << testvalue << ".\n";
+        cout << "ConcatCol compute failed.  expecting 13 but got " << *testvalue << ".\n";
     }
 
     flatF->computeGrad(&cublasH);
@@ -425,11 +425,47 @@ int main() {
     testgrad = new float[1];
     cudaMemcpy(testgrad, v2->d_grad, sizeof(float), cudaMemcpyDeviceToHost);
     if(*testgrad != 3) {
-        cout << "ConcatCol grad failed.  expecting 3 but got " << testvalue << ".\n";
+        cout << "ConcatCol grad failed.  expecting 3 but got " << *testvalue << ".\n";
+    }
+    delete flatF;
+    delete [] testvalue;
+    delete [] testgrad;
+
+    Col* v21 = new Col("v2-1", 2);
+    Col* v31 = new Col("v3-1", 2);
+    Col* v41 = new Col("v4-1", 2);
+    Col* v51 = new Col("v5-1", 2);
+    Flatten* ip1 = new Flatten (new InnerProduct(v41,v21));
+    Flatten* ip2 = new Flatten(new InnerProduct(v51,v31));
+    v2v3 = new ConcatCol({ip1,ip2});
+    Col* v6 = new Col("v6", 2);
+    flatF = new InnerProduct(v2v3, v6);
+
+    v21->loadValues({2,2});
+    v31->loadValues({3,3});
+    v41->loadValues({1,1});
+    v51->loadValues({1,1});
+    v6->loadValues({3,4});
+
+    flatF->compute(&cublasH);
+    testvalue = new float[1];
+    cudaMemcpy(testvalue, flatF->d_value, sizeof(float), cudaMemcpyDeviceToHost);
+    if(*testvalue != 36) {
+        cout << "ConcatCol compute failed.  expecting 36 but got " << *testvalue << ".\n";
+    }
+
+    flatF->computeGrad(&cublasH);
+
+    testgrad = new float[2];
+    cudaMemcpy(testgrad, v21->d_grad, 2*sizeof(float), cudaMemcpyDeviceToHost);
+    if(testgrad[0] != 3 || testgrad[1] != 3) {
+        cout << "ConcatCol grad failed.  expecting 3,3 but got " << testgrad[0] <<"," << testgrad[1] << ".\n";
     }
     delete flatF;
     delete [] testvalue;
     delete [] testgrad;
 
     cublasDestroy(cublasH);
+    cout << "test suite done.\n";
+    return 0;
 }
