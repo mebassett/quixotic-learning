@@ -465,7 +465,8 @@ void Add::pushGrad(cublasHandle_t *handle, float* d_seed) {
 
 void Add::compute(cublasHandle_t *handle) {
     this->col1->compute(handle);
-    this->col2->compute(handle);
+    if(col1 != col2)
+        this->col2->compute(handle);
     float alpha = 1;
 
     cublasScopy(*handle, col1->rows * col1->cols, col1->d_value, 1, d_value, 1);
@@ -527,7 +528,8 @@ void InnerProduct::pushGrad(cublasHandle_t *handle, float* d_seed) {
 
 void InnerProduct::compute(cublasHandle_t *handle) {
     this->col1->compute(handle);
-    this->col2->compute(handle);
+    if(col1 != col2)
+        this->col2->compute(handle);
 
     cublasSdot(*handle, this->col1->rows, this->col1->d_value, 1,
                this->col2->d_value, 1, this->d_value);
@@ -957,7 +959,6 @@ ConcatCol::ConcatCol(vector<AD*> cols)
   : cols(cols)
   , AD("concat of multiple", accumulate(cols.begin(), cols.end(), 0, [](int t, AD* col){ return t+col->rows;}),1) {
     int memIndex = 0;
-    cout << "rows: " << rows << "\n";
     for (auto col : cols) {
         cudaFree(col->d_value);
         col->changeMemory(d_value + memIndex);
