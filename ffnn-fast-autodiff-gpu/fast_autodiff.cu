@@ -52,7 +52,7 @@ void AD::fromDevice() {
     }
 }
 
-__global__ void doFill( int rows, int cols, float value, float* result) {
+__global__ void doFill( int rows, int cols, float value, float* __restrict__ result) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     int i = row * cols + col;
@@ -77,11 +77,6 @@ void AD::computeGrad(cublasHandle_t *handle) {
     
     this->pushGrad(handle, seed);
     
-    err = cudaDeviceSynchronize();
-    if(err != cudaSuccess) {
-        printf("sync error in AD::computeGrad: %s\n", cudaGetErrorString(err));
-        exit(1);
-    }
 
 }
 
@@ -131,7 +126,8 @@ Col::Col(string _name, unsigned int _rows)
 }
 
 __global__
-void doGradDescent( float learningRate, int matrixCols, int matrixRows, float* matrix, float* grad) {
+void doGradDescent( float learningRate, int matrixCols, int matrixRows,
+     float* __restrict__ matrix, float* __restrict__ grad) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if( (row < matrixRows) && (col < matrixCols)){
@@ -330,9 +326,9 @@ void ColLeakyReLU::resetGrad() {
 __global__
 void doComponentProduct( int rows
                        , int cols
-                       , float* grad
-                       , float* seed
-                       , float* result ) {
+                       , float* __restrict__ grad
+                       , float* __restrict__ seed
+                       , float* __restrict__ result ) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if( row < rows && col < cols) {
@@ -356,7 +352,6 @@ void ColLeakyReLU::pushGrad(cublasHandle_t *handle, float* d_seed) {
         printf("Kernel launch error in ColLeakyReLU::pushGrad: %s\n", cudaGetErrorString(err));
         exit(1);
     }
-    cudaDeviceSynchronize();
 
     this->col->pushGrad(handle, newSeed);
     cudaFree(d_seed);
@@ -366,9 +361,9 @@ void ColLeakyReLU::pushGrad(cublasHandle_t *handle, float* d_seed) {
 __global__
 void doLeakyReLU( int Arows
                 , int Acols
-                , float* grad
-                , float* A 
-                , float* result) {
+                , float* __restrict__ grad
+                , float* __restrict__ A 
+                , float* __restrict__ result) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
     if( (row < Arows) && (col < Acols)) {
@@ -397,7 +392,6 @@ void ColLeakyReLU::compute(cublasHandle_t *handle) {
         exit(1);
     }
 
-    cudaDeviceSynchronize();
 
 
 }
@@ -556,7 +550,7 @@ InnerProduct::~InnerProduct() {
     }
 }
 
-__global__ void doPadInput(float* input, float* paddedInput,
+__global__ void doPadInput(float* __restrict__ input, float* __restrict__ paddedInput,
         int inputRows, int inputCols, int rowPadding, int colPadding) {
     int row = blockIdx.y * blockDim.y + threadIdx.y;
     int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -588,7 +582,6 @@ void Convolution::padInput() {
         exit(1);
     }
 
-    cudaDeviceSynchronize();
 
 
 
@@ -596,7 +589,7 @@ void Convolution::padInput() {
 }
 
 
-__global__ void doUnroll(float* kernel, float* matrix,
+__global__ void doUnroll(float* __restrict__ kernel, float* __restrict__ matrix,
                          int kernelRows, int kernelCols,
                          int mRows, int mCols,
                          int inCols, int outCols,
@@ -640,7 +633,6 @@ void Convolution::unrollKernel() {
         exit(1);
     }
 
-    cudaDeviceSynchronize();
 }
 
 void Convolution::resetGrad() {
@@ -650,7 +642,7 @@ void Convolution::resetGrad() {
 }
 
 
-__global__ void doKernelRoll(float* matrix, float* kernel,
+__global__ void doKernelRoll(float* __restrict__ matrix, float* __restrict__ kernel,
                          int kernelRows, int kernelCols,
                          int mCols, int mRows,
                          int colSkip, int rowSkip,
@@ -676,7 +668,7 @@ __global__ void doKernelRoll(float* matrix, float* kernel,
     }
 }
 
-__global__ void doCopyWithoutPadding(float* paddedSource, float* dest,
+__global__ void doCopyWithoutPadding(float* __restrict__ paddedSource, float* __restrict__ dest,
         int rows, int cols, int rowPadding, int colPadding) {
      int row = blockIdx.y * blockDim.y + threadIdx.y;
      int col = blockIdx.x * blockDim.x + threadIdx.x;
@@ -815,10 +807,10 @@ __global__ void doMaxPoolGrad(int targetRows, int targetCols,
                               int matrixRows, int matrixCols,
                               int rowSkip, int height,
                               int colSkip, int width,
-                              float* matrix,
-                              float* value,
-                              float* seed,
-                              float* result) {
+                              float* __restrict__ matrix,
+                              float* __restrict__ value,
+                              float* __restrict__ seed,
+                              float* __restrict__ result) {
     int trow = blockIdx.y * blockDim.y + threadIdx.y;
     int tcol = blockIdx.x * blockDim.x + threadIdx.x;
     int tIndex = targetCols * trow + tcol;
@@ -858,7 +850,6 @@ void MaxPool::pushGrad(cublasHandle_t *handle, float* d_seed) {
         exit(1);
     }
 
-    cudaDeviceSynchronize();
 
     this->matrix->pushGrad(handle, d_grad);
     cudaFree(d_seed);
@@ -869,8 +860,8 @@ __global__ void doMaxPool(int targetRows, int targetCols,
                           int matrixRows, int matrixCols,
                           int rowSkip, int height,
                           int colSkip, int width,
-                          float* matrix,
-                          float* result) {
+                          float* __restrict__ matrix,
+                          float* __restrict__ result) {
     int trow = blockIdx.y * blockDim.y + threadIdx.y;
     int tcol = blockIdx.x * blockDim.x + threadIdx.x;
     if(trow < targetRows && tcol < targetCols) {
@@ -908,7 +899,6 @@ void MaxPool::compute(cublasHandle_t *handle) {
         exit(1);
     }
 
-    cudaDeviceSynchronize();
 }
 
 MaxPool::MaxPool(AD* m, unsigned int width, unsigned int height,
