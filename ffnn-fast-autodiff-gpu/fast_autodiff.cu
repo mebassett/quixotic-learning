@@ -27,6 +27,7 @@ void AD::compute(cublasHandle_t *handle) {}
 
 AD::AD(string _name, unsigned int _rows, unsigned int _cols)
     : name(_name)
+    , hasBeenUnrolled(false)
     , rows(_rows)
     , cols(_cols) {
     initCuda = true;
@@ -154,6 +155,7 @@ void Matrix::gradDescent(cublasHandle_t *handle, float learningRate) {
                 this->rows,
                 this->d_value,
                 this->rows);
+    hasBeenUnrolled = false;
 }
 
 void Matrix::loadValues(valarray<float> newValues) {
@@ -169,6 +171,7 @@ void Matrix::loadValues(valarray<float> newValues) {
                 cudaGetErrorString(err));
         exit(1);
     }
+    hasBeenUnrolled = false;
 
 
 }
@@ -589,40 +592,65 @@ void Convolution::padInput() {
 }
 
 
-__global__ void doUnroll(float* __restrict__ kernel, float* __restrict__ matrix,
-                         int kernelRows, int kernelCols,
-                         int mRows, int mCols,
-                         int inCols, int outCols,
-                         int rowSkip, int colSkip) {
+#define MAX_KERNEL_SIZE 1024
+
+__constant__ float dc_kernel[MAX_KERNEL_SIZE];
+
+
+__global__ void doUnroll(float* __restrict__ matrix,
+                         unsigned int kernelRows, unsigned int kernelCols,
+                         unsigned int mRows, unsigned int mCols,
+                         unsigned int inCols, unsigned int outCols,
+                         unsigned int rowSkip, unsigned int colSkip) {
+
+    __shared__ float sharedMem[128];
+    int* outRowMem = (int*)sharedMem;
+    int* outColMem = (int*)&outRowMem[blockDim.y];
+    int* inRowMem = (int*)&outColMem[blockDim.y];
+    int* inColMem = (int*)&inRowMem[blockDim.x];
+
     int mrow = blockIdx.y * blockDim.y + threadIdx.y;
     int mcol = blockIdx.x * blockDim.x + threadIdx.x;
-    if(mrow < mRows && mcol < mCols) {
-        int outRow = mrow / outCols;
-        int outCol = mrow % outCols;
+    if(!(mrow < mRows && mcol < mCols))
+        return;
 
-        int inRow = mcol / inCols;
-        int inCol = mcol % inCols;
-
-        int kRowIndex = inRow - rowSkip * outRow;
-        int kColIndex = inCol - colSkip * outCol;
-
-        if(    kRowIndex >= 0 && kRowIndex < kernelRows 
-            && kColIndex >=0 && kColIndex < kernelCols) {
-            matrix[mrow*mCols + mcol] = kernel[kRowIndex * kernelCols + kColIndex];
-        }else{
-            matrix[mrow*mCols + mcol] = 0;
-        }
-
+    if(threadIdx.x == 0) {
+        outRowMem[threadIdx.y] = mrow / outCols;
+        outColMem[threadIdx.y] = mrow % outCols;
     }
+    if(threadIdx.y == 0) {
+        inRowMem[threadIdx.x] = mcol / inCols;
+        inColMem[threadIdx.x] = mcol % inCols;
+    }
+    __syncthreads();
+
+    int outRow = outRowMem[threadIdx.y];
+    int outCol = outColMem[threadIdx.y];//mrow % outCols;
+
+    int inRow = inRowMem[threadIdx.x];//mcol / inCols;
+    int inCol = inColMem[threadIdx.x];//mcol % inCols;
+
+    int kRowIndex = inRow - rowSkip * outRow;
+    int kColIndex = inCol - colSkip * outCol;
+
+    if(    kRowIndex >= 0 && kRowIndex < kernelRows 
+        && kColIndex >=0 && kColIndex < kernelCols) {
+        matrix[mrow*mCols + mcol] = dc_kernel[kRowIndex * kernelCols + kColIndex];
+    }else{
+        matrix[mrow*mCols + mcol] = 0;
+    }
+
 }
 
 void Convolution::unrollKernel() {
-
+    
+    cudaMemcpyToSymbol(dc_kernel, kernel->d_value,
+        sizeof(float)*kernel->rows*kernel->cols, 0, cudaMemcpyDeviceToDevice);
 
     cudaError_t err; 
     dim3 gd(ceil(this->unrKrnlCols/32.0), ceil(this->unrKrnlRows/32.0), 1);
     dim3 bd(32, 32, 1);
-    doUnroll<<<gd, bd>>>(this->kernel->d_value, this->d_kernel,
+    doUnroll<<<gd, bd>>>(this->d_kernel,
              this->kernel->rows, this->kernel->cols,
              this->unrKrnlRows, this->unrKrnlCols,
              this->multiplicand->cols + 2*this->colPadding, this->cols,
@@ -751,7 +779,10 @@ void Convolution::compute(cublasHandle_t *handle) {
     this->multiplicand->compute(handle);
     this->kernel->compute(handle);
     this->padInput();
-    this->unrollKernel();
+    if(!(kernel->hasBeenUnrolled)) {
+        this->unrollKernel();
+        kernel->hasBeenUnrolled = true;
+    }
     float alpha = 1;
     float beta = 0;
 
