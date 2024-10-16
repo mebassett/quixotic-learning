@@ -2,12 +2,13 @@
 #include <valarray>
 #include <iterator>
 #include <random>
+#include <chrono>
 
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 
-#include "mnistdata.h"
-#include "fast_autodiff.h" 
+#include "../fast_autodiff/fast_autodiff.h"
+#include "../mnistdata/mnistdata.h"
 
 using namespace std;
 using namespace FA;
@@ -150,7 +151,9 @@ int main() {
     int epochs = 1;
     float learningRate = 0.025;
     int trainingExamples = 0;
-    while(epochs <= 1000){
+    auto startTime = chrono::steady_clock::now();
+    while(epochs <= 20){
+        auto epochStartTime = chrono::steady_clock::now();
         cout << "Starting epoch " << epochs << "...\n";
         for(auto row: rows) {
             lossFunc->resetGrad();
@@ -175,8 +178,17 @@ int main() {
             if(trainingExamples % 10000 == 0)
                 cout << "done " << trainingExamples << " examples so far.\n";
         }
+        auto epochEndTime = chrono::steady_clock::now();
+        auto elapsed = epochEndTime - startTime;
+        auto lapped = epochEndTime - epochStartTime;
         trainingExamples = 0;
         cout << "training finished, testing again\n";
+        cout << "Elapsed time: " 
+             << chrono::duration_cast<chrono::seconds>(elapsed).count()
+             << " s\n";
+        cout << "Epoch time: " 
+             << chrono::duration_cast<chrono::seconds>(lapped).count()
+             << " s\n";
         numRight = 0;
         errorRate = 0.0;
         for (auto row: testRows){
@@ -197,6 +209,7 @@ int main() {
 
         epochs++;
     }
+
 
 
     return 0;
