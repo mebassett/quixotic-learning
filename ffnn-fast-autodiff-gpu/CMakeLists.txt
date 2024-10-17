@@ -59,7 +59,14 @@ set_target_properties(tests PROPERTIES
 
 target_compile_options(tests PRIVATE
        $<$<COMPILE_LANGUAGE:CUDA>:-I${CMAKE_BINARY_DIR}/_deps/googletest-src/googletest/include>
-   )
+)
+target_compile_options(tests PRIVATE
+    $<$<COMPILE_LANGUAGE:CUDA>:-g -G>
+)
+add_test(NAME MemCheckTest COMMAND compute-sanitizer --tool memcheck --leak-check=full $<TARGET_FILE:tests>)
+set_tests_properties(MemCheckTest PROPERTIES
+    FAIL_REGULAR_EXPRESSION "ERROR SUMMARY: [^0]"  # Check for any non-zero errors summary.
+)
 include(GoogleTest)
 
 gtest_discover_tests(tests)
