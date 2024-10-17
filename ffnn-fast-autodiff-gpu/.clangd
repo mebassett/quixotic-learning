@@ -1,0 +1,11 @@
+CompileFlags:
+    CompilationDatabase: ./build
+
+    Remove:
+        - -forward-unknown-to-host-compiler
+        - --generate-code=*
+        - -rdc=true
+        - --options-file
+    Add:
+        - --cuda-gpu-arch=sm_52
+
