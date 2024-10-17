@@ -1,4 +1,4 @@
-#include "../sill_autodiff/sill_autodiff.h"
+#include "../silly_autodiff/silly_autodiff.h"
 #include <cublas_v2.h>
 #include <gtest/gtest.h>
 #include <valarray>

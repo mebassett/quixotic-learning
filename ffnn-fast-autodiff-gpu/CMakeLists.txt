@@ -9,18 +9,18 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(CUDAToolkit REQUIRED)
 
-add_subdirectory(fast_autodiff)
+add_subdirectory(silly_autodiff)
 add_subdirectory(mnistdata)
 
-add_executable(ffnn ffnn/ffnn-fast_autodiff.cu)
-target_include_directories(ffnn PUBLIC ${PROJECT_SOURCE_DIR}/fast_autodiff)
+add_executable(ffnn ffnn/ffnn.cu)
+target_include_directories(ffnn PUBLIC ${PROJECT_SOURCE_DIR}/silly_autodiff)
 target_include_directories(ffnn PUBLIC ${PROJECT_SOURCE_DIR}/mnist)
-target_link_libraries(ffnn PUBLIC cublas fast_autodiff mnistdata)
+target_link_libraries(ffnn PUBLIC cublas silly_autodiff mnistdata)
 
 add_executable(lenet lenet/lenet.cu)
-target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/fast_autodiff)
+target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/silly_autodiff)
 target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/mnist)
-target_link_libraries(lenet PUBLIC cublas fast_autodiff mnistdata)
+target_link_libraries(lenet PUBLIC cublas silly_autodiff mnistdata)
 
 include(FetchContent)
 FetchContent_Declare(
@@ -34,19 +34,19 @@ enable_testing()
 
 add_executable(
     tests
-    tests/fast_autodiff.test.cu
+    tests/silly_autodiff.test.cu
 )
 target_link_libraries(
     tests
     PRIVATE
     GTest::gtest_main
-    fast_autodiff
+    silly_autodiff
 )
 target_include_directories(
     tests
     PRIVATE
     "${CMAKE_BINARY_DIR}/_deps/googletest-src/googletest/include"
-    ${PROJECT_SOURCE_DIR}/fast_autodiff
+    ${PROJECT_SOURCE_DIR}/silly_autodiff
 )
 set_target_properties(tests PROPERTIES
        CUDA_SEPARABLE_COMPILATION ON
@@ -61,7 +61,7 @@ target_compile_options(tests PRIVATE
        $<$<COMPILE_LANGUAGE:CUDA>:-I${CMAKE_BINARY_DIR}/_deps/googletest-src/googletest/include>
 )
 target_compile_options(tests PRIVATE
-    $<$<COMPILE_LANGUAGE:CUDA>:-g -G>
+    $<$<COMPILE_LANGUAGE:CUDA>:-g >
 )
 add_test(NAME MemCheckTest COMMAND compute-sanitizer --tool memcheck --leak-check=full $<TARGET_FILE:tests>)
 set_tests_properties(MemCheckTest PROPERTIES

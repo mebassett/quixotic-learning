@@ -1,10 +1,9 @@
-// fast_autodiff.h
+// silly_autodiff.h
 #ifndef FAST_AUTODIFF_H
 #define FAST_AUTODIFF_H
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <iostream>
-#include <utility>
 #include <valarray>
 #include <vector>
 
@@ -127,7 +126,7 @@ struct Convolution : AD {
 
     void resetGrad() override;
     void pushGrad(cublasHandle_t* handle, float* d_seed) override;
-    void compute(cublasHandle_t* handle);
+    void compute(cublasHandle_t* handle) override;
     Convolution(AD* multiplicand, AD* kernel, unsigned int rowPadding,
         unsigned int rowSkip, unsigned int colPadding,
         unsigned int colSkip);
@@ -143,9 +142,9 @@ struct MaxPool : AD {
     unsigned int width;
     unsigned int height;
 
-    void resetGrad();
+    void resetGrad() override;
     void pushGrad(cublasHandle_t* handle, float* d_seed) override;
-    void compute(cublasHandle_t* handle);
+    void compute(cublasHandle_t* handle) override;
 
     MaxPool(AD* m, unsigned int width, unsigned int height, unsigned int rowSkip,
         unsigned int colSkip);
@@ -156,7 +155,7 @@ struct ConcatCol : AD {
     std::vector<AD*> cols;
     void resetGrad() override;
     void pushGrad(cublasHandle_t* handle, float* d_seed) override;
-    void compute(cublasHandle_t* handle);
+    void compute(cublasHandle_t* handle) override;
     ConcatCol(std::vector<AD*> cols);
     ~ConcatCol() override;
 };
@@ -172,4 +171,4 @@ struct ConcatCol : AD {
         }                                                                        \
     } while (0)
 
-#endif /* FAST_AUTODIFF_H */
+#endif /* SILLY_AUTODIFF_H */

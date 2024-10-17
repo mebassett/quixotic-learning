@@ -7,7 +7,7 @@
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 
-#include "../fast_autodiff/fast_autodiff.h"
+#include "../silly_autodiff/silly_autodiff.h"
 #include "../mnistdata/mnistdata.h"
 
 using namespace std;

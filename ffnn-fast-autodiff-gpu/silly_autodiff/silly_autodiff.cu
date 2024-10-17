@@ -1,4 +1,4 @@
-#include "fast_autodiff.h"
+#include "silly_autodiff.h"
 #include <cublas_v2.h>
 #include <cuda_runtime.h>
 #include <iostream>
