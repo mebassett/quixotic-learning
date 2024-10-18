@@ -39,6 +39,10 @@ AD::AD(string _name, unsigned int _rows, unsigned int _cols)
 }
 AD::AD() { initCuda = false; }
 
+void AD::getPartials(float* p) {
+    cudaMemcpy(p, this->d_grad, rows*cols*sizeof(float), cudaMemcpyDeviceToHost);
+}
+
 void AD::fromDevice()
 {
     cudaError_t err;

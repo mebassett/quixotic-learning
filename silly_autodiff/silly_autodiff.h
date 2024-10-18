@@ -20,6 +20,7 @@ struct AD {
     float* d_grad;
     float* d_value;
     float* value;
+    void getPartials(float* p);
     virtual void fromDevice();
     virtual void compute(cublasHandle_t* handle);
     virtual void resetGrad();
