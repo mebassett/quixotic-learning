@@ -10,6 +10,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CUDAToolkit REQUIRED)
 
 add_subdirectory(silly_autodiff)
+add_subdirectory(daft_autodiff)
 add_subdirectory(mnistdata)
 
 add_executable(ffnn examples/ffnn/ffnn.cu)
