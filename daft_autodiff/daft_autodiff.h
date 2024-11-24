@@ -4,13 +4,30 @@
 #include <cublas_v2.h>
 #include <map>
 #include <string>
+#include <variant>
 #include <vector>
 
 using namespace std;
 
 namespace DA {
 
-enum OperationType { InputColumn, MultiplyByMatrix, LeakyReLU };
+enum OperationType { InputColumn, MultiplyByMatrix, LeakyReLU, Add, Scalar, InnerProduct};
+
+struct BasicConfig {
+    string target;
+};
+
+struct BinaryOpConfig {
+    string target1;
+    string target2;
+};
+
+struct ScalarConfig {
+    string target;
+    float scale;
+};
+
+using OpConfig = variant<BasicConfig, BinaryOpConfig, ScalarConfig>;
 
 struct Operation {
     const OperationType opType;
@@ -21,10 +38,14 @@ struct Operation {
     const uint cols;
     const string name;
     const bool noOp = false;
+    const OpConfig config;
 
     static Operation column(string name, uint rows);
-    static Operation multipleByMatrix(string name, uint rows, uint cols);
-    static Operation applyLeakyReLU(string name);
+    static Operation multipleByMatrix(string name, uint rows, uint cols, string target);
+    static Operation applyLeakyReLU(string name, string target);
+    static Operation innerProduct(string name, string target1, string target2, uint rows);
+    static Operation add(string name, string target1, string target2, uint rows, uint cols);
+    static Operation scalarMultiply(string name, string target, uint rows, uint cols, float scale);
 };
 
 
