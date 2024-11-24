@@ -122,9 +122,12 @@ namespace DA {
         }
 
     }
+    Function::~Function() {
+        cudaFree(d_value);
+        
+    }
 
     void Function::addOp(Operation op) {
-        assert(("First op must be real!", !op.noOp > 0 && ops.size() > 0));
         if(op.noOp) {
             Operation& lastOp = ops[ops.size()-1] ;
             Operation newOp { .opType = op.opType
@@ -145,6 +148,12 @@ namespace DA {
     void Function::setValue(string name, vector<float> value) {
         // trusting the user to give us a vector of the right size! eek!    
         cudaMemcpy(memLocs[name+"_result"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
+    }
+
+    void Function::getValue(float* result) {
+        Operation& op = ops[ops.size()-1];
+        float* d_value = memLocs[op.name+"_result"];
+        cudaMemcpy(result, d_value, sizeof(float)*op.rows*op.cols,cudaMemcpyDeviceToHost);
     }
 
     void Function::compute() {
@@ -182,6 +191,31 @@ namespace DA {
 
                     doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result);
 
+
+                break;}
+                case Add:{
+                    BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
+                    float* d_v1 = memLocs[opConfig.target1+"_result"];
+                    float* d_v2 = memLocs[opConfig.target2+"_result"];
+                    float* d_result = memLocs[op.name+"_result"];
+                    float alpha = 1.0;
+                    
+                    cublasScopy(*cublasH, op.rows * op.cols, d_v1, 1, d_result, 1);
+                    cublasSaxpy(*cublasH, op.rows * op.cols, &alpha, d_v2, 1, d_result, 1);
+                break;}
+                case Scalar:{
+                    ScalarConfig opConfig = get<ScalarConfig>(op.config);
+                    float* d_target = memLocs[opConfig.target+"_result"];
+                    float* d_result = memLocs[op.name+"_result"];
+                    cublasScopy(*cublasH, op.rows * op.cols, d_target, 1, d_result, 1);
+                    cublasSscal(*cublasH, op.rows * op.cols, &(opConfig.scale), d_result, 1);
+                break;}
+                case InnerProduct:{
+                    BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
+                    float* d_v1 = memLocs[opConfig.target1+"_result"];
+                    float* d_v2 = memLocs[opConfig.target2+"_result"];
+                    float* d_result = memLocs[op.name+"_result"];
+                    cublasSdot(*cublasH, op.rows, d_v1, 1, d_v2, 1, d_result);
 
                 break;}
             }

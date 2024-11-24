@@ -36,18 +36,21 @@ enable_testing()
 add_executable(
     tests
     tests/silly_autodiff.test.cu
+    tests/daft_autodiff.test.cu
 )
 target_link_libraries(
     tests
     PRIVATE
     GTest::gtest_main
     silly_autodiff
+    daft_autodiff
 )
 target_include_directories(
     tests
     PRIVATE
     "${CMAKE_BINARY_DIR}/_deps/googletest-src/googletest/include"
     ${PROJECT_SOURCE_DIR}/silly_autodiff
+    ${PROJECT_SOURCE_DIR}/daft_autodiff
 )
 set_target_properties(tests PROPERTIES
        CUDA_SEPARABLE_COMPILATION ON

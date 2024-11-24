@@ -59,6 +59,8 @@ struct Function {
     void addOp(Operation); 
     void setValue(string name, vector<float> value);
     void compute();
+    void getValue(float* result);
+    ~Function();
 };
 
 }
