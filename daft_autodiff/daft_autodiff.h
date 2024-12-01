@@ -20,6 +20,8 @@ struct BasicConfig {
 struct BinaryOpConfig {
     string target1;
     string target2;
+    const uint targetRows;
+    const uint targetCols;
 };
 
 struct ScalarConfig {
@@ -59,7 +61,10 @@ struct Function {
     void addOp(Operation); 
     void setValue(string name, vector<float> value);
     void compute();
-    void getValue(float* result);
+    void getValue(string name, float* result);
+    void getGrad(string name, float* result);
+    void computeGrad(string name, float* seed);
+    void computeGrad(string name);
     ~Function();
 };
 

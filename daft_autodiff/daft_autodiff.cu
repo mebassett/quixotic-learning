@@ -1,6 +1,8 @@
 #include "daft_autodiff.h"
+#include <algorithm>
 #include <cublas_v2.h>
 #include <cassert>
+#include <iostream>
 #include <vector>
 
 using namespace std;
@@ -22,6 +24,14 @@ namespace DA {
                 grad[i] = 0.01;
             }
         }
+    }
+    __global__ void doFill(int rows, int cols, float value, float* result)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        int i = row * cols + col;
+        if (i < rows * cols)
+            result[i] = value;
     }
 
     Operation Operation::column(string name, uint rows) {
@@ -69,7 +79,8 @@ namespace DA {
                , .cols = 1
                , .name{name}
                , .noOp = false
-               , .config{ (BinaryOpConfig) {.target1{target1}, .target2{target2}}}
+               , .config{ (BinaryOpConfig) {.target1{target1}, .target2{target2}, 
+                                            .targetRows = rows, .targetCols = 1}}
         };
 
     }
@@ -83,7 +94,8 @@ namespace DA {
                , .cols = cols
                , .name{name}
                , .noOp = false
-               , .config{ (BinaryOpConfig) { .target1{target1}, .target2{target2}}}
+               , .config{ (BinaryOpConfig) {.target1{target1}, .target2{target2}, 
+                                            .targetRows = rows, .targetCols = 1}}
         };
     }
 
@@ -150,20 +162,102 @@ namespace DA {
         cudaMemcpy(memLocs[name+"_result"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
     }
 
-    void Function::getValue(float* result) {
-        Operation& op = ops[ops.size()-1];
-        float* d_value = memLocs[op.name+"_result"];
-        cudaMemcpy(result, d_value, sizeof(float)*op.rows*op.cols,cudaMemcpyDeviceToHost);
+    void Function::getValue(string name, float* result) {
+        Operation *op;
+        for(auto needle : ops){
+            if(needle.name == name) {
+                op = &needle;
+                break;
+            }
+        }
+        float* d_value = memLocs[name+"_result"];
+        cudaMemcpy(result, d_value, sizeof(float)*op->rows*op->cols,cudaMemcpyDeviceToHost);
     }
 
+    void Function::getGrad(string name, float* result) {
+        Operation *op;
+        for(auto needle : ops){
+            if(needle.name == name) {
+                op = &needle;
+                break;
+            }
+        }
+        float* d_value = memLocs[name+"_grad"];
+        cudaMemcpy(result, d_value, sizeof(float)*op->gradSize,cudaMemcpyDeviceToHost);
+    }
+
+    void Function::computeGrad(string name) {
+        const auto op = find_if(ops.begin(), ops.end(), [name](auto needle) { return needle.name == name;});
+        if(op == ops.end()) return;
+        float* seed;
+        cudaError_t err;
+        int size = op->rows * op->cols * sizeof(float);
+        err = cudaMalloc((void**)&seed, size);
+        if (err != cudaSuccess) {
+            printf("malloc error in Function::computeGrad: %s\n", cudaGetErrorString(err));
+            exit(1);
+        }
+
+        dim3 gd(ceil(op->cols / 32.0), ceil(op->rows / 32.0), 1);
+        dim3 bd(32, 32, 1);
+        doFill<<<gd, bd>>>(op->rows, op->cols, 1.0f, seed);
+
+        computeGrad(name, seed);
+        
+
+    }
+
+    void Function::computeGrad(string name, float* seed){
+        const auto it = find_if(ops.begin(), ops.end(), [name](auto needle) { return needle.name == name;});
+
+        if(it != ops.end()) {
+            Operation op = *it;
+            cout << "after find\n";
+            if(op.opType == InnerProduct) {
+                cout << "doing stuff with " << op.name << "\n";
+                if(op.config.valueless_by_exception()){
+                    cout << "valueless by exception\n";
+                }
+                BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
+                cout << "found " << op.name << "\n";
+                float* col1 = memLocs[opConfig.target1+"_result"];
+                float* col2 = memLocs[opConfig.target2+"_result"];
+
+                float* vec1 = memLocs[name+"_grad"];
+                float* vec2 = memLocs[name+"_grad"] + opConfig.targetRows;
+
+                cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_DEVICE);
+                cublasScopy(*cublasH, opConfig.targetRows, col1, 1, vec1, 1);
+                cublasScopy(*cublasH, opConfig.targetRows, col2, 1, vec2, 1);
+
+
+
+                cublasSscal(*cublasH, opConfig.targetRows, seed, vec1, 1);
+                cublasSscal(*cublasH, opConfig.targetRows, seed, vec2, 1);
+                cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_HOST );
+                
+                computeGrad(opConfig.target1, vec2);
+                if(opConfig.target1 != opConfig.target2)
+                    computeGrad(opConfig.target2, vec1);
+                return;
+            }
+            if(op.opType == InputColumn) {
+                float *grad = memLocs[name+"_grad"];
+
+                float alpha = 1;
+                cublasSaxpy(*cublasH, op.cols * op.rows, &alpha, seed, 1, grad, 1);
+                
+            }
+        }
+    }
+
+
     void Function::compute() {
-        for(uint i = 1; i<ops.size(); i++) {
-            Operation op = ops[i];
-            Operation lastOp = ops[i-1];
+        for(auto op : ops) {
             switch(op.opType) {
                 case InputColumn:
                     // basically noop
-                    continue;
+                    break;
                 break;
                 case MultiplyByMatrix: {
                     BasicConfig opConfig = get<BasicConfig>(op.config);
@@ -215,7 +309,7 @@ namespace DA {
                     float* d_v1 = memLocs[opConfig.target1+"_result"];
                     float* d_v2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
-                    cublasSdot(*cublasH, op.rows, d_v1, 1, d_v2, 1, d_result);
+                    cublasSdot(*cublasH, opConfig.targetRows, d_v1, 1, d_v2, 1, d_result);
 
                 break;}
             }
