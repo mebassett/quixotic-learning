@@ -6,12 +6,15 @@
 #include <string>
 #include <variant>
 #include <vector>
+#include <iostream>
 
 using namespace std;
 
 namespace DA {
 
-enum OperationType { InputColumn, MultiplyByMatrix, LeakyReLU, Add, Scalar, InnerProduct};
+enum class OperationType { InputColumn, MultiplyByMatrix, LeakyReLU, Add, Scalar, InnerProduct};
+
+ostream& operator<<(ostream &o, const OperationType t) ;
 
 struct BasicConfig {
     string target;

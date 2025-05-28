@@ -45,8 +45,10 @@ protected:
 
     Function* f;
     Function* g;
+    Function* h;
     float* result;
     float* result2;
+    float* result3;
     void SetUp() override {
         cublasCreate(&cublasH);
         f = new Function(&cublasH);
@@ -58,29 +60,48 @@ protected:
         g->addOp(Operation::column("x", 1));
         g->addOp(Operation::innerProduct("test1", "x", "x", 1));
         g->compile();
+        h = new Function(&cublasH);
+        h->addOp(Operation::column("sr", 2));
+        h->addOp(Operation::column("tu", 2));
+        h->addOp(Operation::innerProduct("test2", "sr", "tu", 2));
+        h->compile();
         result = new float[1];
-        result2 = new float;
+        result2 = new float[1];
+        result3 = new float[2];
     }
     void TearDown() override {
         cublasDestroy(cublasH);
         delete [] result;
-        delete result2;
+        delete [] result2;
+        delete [] result3;
         delete f;
         delete g;
+        delete h;
 
     }
 };
 
 TEST_F(DaftInnerProductTest, DaftInnerProductCompute) {
-    f->setValue("ab", {3.0, 4.0});
-    f->setValue("xy", {1.0, 2.0});
-    f->compute();
-    f->getValue("test1", result);
-    EXPECT_EQ(result[0], 11.0) << "compute";
+    //f->setValue("ab", {3.0, 4.0});
+    //f->setValue("xy", {1.0, 2.0});
+    //f->compute();
+    //f->getValue("test1", result);
+    //EXPECT_EQ(result[0], 11.0) << "compute";
 
     g->setValue("x", {9});
     g->compute();
     g->computeGrad("test1");
     g->getGrad("x", result2);
-    EXPECT_EQ(result2[0], 18) << "x grad";
+    EXPECT_EQ(result2[0], 18) << "x0 grad";
+
+    h->setValue("sr", {1.0,2.0});
+    h->setValue("tu", {3.0,-3.0});
+    h->compute();
+    h->getValue("test2", result2);
+    EXPECT_EQ(*result2, -3.0) << "compute";
+
+    h->computeGrad("test2");
+    h->getGrad("sr", result3);
+    EXPECT_EQ(result3[0], 3) << "s grad ";
+    EXPECT_EQ(result3[1], -3) << "r grad ";
 }
