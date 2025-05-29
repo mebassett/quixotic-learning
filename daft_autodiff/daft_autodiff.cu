@@ -190,7 +190,7 @@ namespace DA {
 
     void Function::setValue(string name, vector<float> value) {
         // trusting the user to give us a vector of the right size! eek!    
-        cudaMemcpy(memLocs[name+"_result"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(memLocs[name+"_working"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
     }
 
     void Function::getValue(string name, float* result) {
@@ -247,34 +247,55 @@ namespace DA {
         if(it != ops.end()) {
             Operation op = *it;
             float *grad = memLocs[name+"_grad"];
-            if(op.opType == OperationType::InnerProduct) {
-                BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
-                float* col1 = memLocs[opConfig.target1+"_result"];
-                float* col2 = memLocs[opConfig.target2+"_result"];
+            switch(op.opType) {
+                case OperationType::InnerProduct: {
+                    BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
+                    float* col1 = memLocs[opConfig.target1+"_result"];
+                    float* col2 = memLocs[opConfig.target2+"_result"];
 
 
-                float* vec1 = memLocs[name+"_grad"];
-                float* vec2 = memLocs[name+"_grad"] + opConfig.targetRows;
-                
-                cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_DEVICE);
+                    float* vec1 = memLocs[name+"_grad"];
+                    float* vec2 = memLocs[name+"_grad"] + opConfig.targetRows;
+                    
+                    cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_DEVICE);
 
-                cublasScopy(*cublasH, opConfig.targetRows, col1, 1, vec1, 1);
-                cublasSscal(*cublasH, opConfig.targetRows, seed, vec1, 1);
-                
-                cublasScopy(*cublasH, opConfig.targetRows, col2, 1, vec2, 1);
-                cublasSscal(*cublasH, opConfig.targetRows, seed, vec2, 1);
-                cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_HOST );
+                    cublasScopy(*cublasH, opConfig.targetRows, col1, 1, vec1, 1);
+                    cublasSscal(*cublasH, opConfig.targetRows, seed, vec1, 1);
+                    
+                    cublasScopy(*cublasH, opConfig.targetRows, col2, 1, vec2, 1);
+                    cublasSscal(*cublasH, opConfig.targetRows, seed, vec2, 1);
+                    cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_HOST );
 
-                
-                computeGrad(opConfig.target2, vec1);
-                computeGrad(opConfig.target1, vec2);
+                    
+                    computeGrad(opConfig.target2, vec1);
+                    computeGrad(opConfig.target1, vec2);
+                } break;
+                case OperationType::InputColumn: {
+                    float *grad = memLocs[name+"_grad"];
+                    float alpha = 1;
+                    cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1);
+                } break;
+                case OperationType::MultiplyByMatrix: {
+                    BasicConfig opConfig = get<BasicConfig>(op.config);
 
-            }
-            if(op.opType == OperationType::InputColumn) {
-                float *grad = memLocs[name+"_grad"];
-                float alpha = 1;
-                cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1);
-                
+                    float *matrixGrad = memLocs[name+"_grad"];
+                    float *colGrad = memLocs[opConfig.target+"_grad"];
+
+                    // where should the values of the matrix live?
+                    // this is tricky because of the matrix is the result of a
+                    // computation its going to be in the _result of another
+                    // operation. So this is probably the wrong thing to do.
+                    // it's probably better to have a generic InputMatrix and a
+                    // binary op that is MatrixColumnMult.
+                    float *matrixValue = memLocs[name+"_working"];
+                    float *colValue = memLocs[opConfig.target+"_grad"];
+
+
+
+
+
+
+                } break;
             }
         }
     }

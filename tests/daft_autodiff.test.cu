@@ -82,11 +82,11 @@ protected:
 };
 
 TEST_F(DaftInnerProductTest, DaftInnerProductCompute) {
-    //f->setValue("ab", {3.0, 4.0});
-    //f->setValue("xy", {1.0, 2.0});
-    //f->compute();
-    //f->getValue("test1", result);
-    //EXPECT_EQ(result[0], 11.0) << "compute";
+    f->setValue("ab", {3.0, 4.0});
+    f->setValue("xy", {1.0, 2.0});
+    f->compute();
+    f->getValue("test1", result);
+    EXPECT_EQ(result[0], 11.0) << "compute";
 
     g->setValue("x", {9});
     g->compute();
