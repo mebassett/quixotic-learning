@@ -12,7 +12,7 @@ using namespace std;
 
 namespace DA {
 
-enum class OperationType { InputColumn, MultiplyByMatrix, LeakyReLU, Add, Scalar, InnerProduct};
+enum class OperationType { InputColumn, InputMatrix, MatrixProduct, LeakyReLU, Add, Scalar, InnerProduct};
 
 ostream& operator<<(ostream &o, const OperationType t) ;
 
@@ -27,12 +27,20 @@ struct BinaryOpConfig {
     const uint targetCols;
 };
 
+struct BinaryMatrixConfig {
+    string target1;
+    string target2;
+    const uint target1Rows;
+    const uint target1Cols;
+    const uint target2Cols;
+};
+
 struct ScalarConfig {
     string target;
     float scale;
 };
 
-using OpConfig = variant<BasicConfig, BinaryOpConfig, ScalarConfig>;
+using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig>;
 
 struct Operation {
     const OperationType opType;
@@ -46,7 +54,8 @@ struct Operation {
     const OpConfig config;
 
     static Operation column(string name, uint rows);
-    static Operation multipleByMatrix(string name, uint rows, uint cols, string target);
+    static Operation matrix(string name, uint rows, uint cols);
+    static Operation matrixProduct(string name, string target1, string target2, uint target1Rows, uint target1Cols, uint target2Cols);
     static Operation applyLeakyReLU(string name, string target);
     static Operation innerProduct(string name, string target1, string target2, uint rows);
     static Operation add(string name, string target1, string target2, uint rows, uint cols);

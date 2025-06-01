@@ -105,3 +105,36 @@ TEST_F(DaftInnerProductTest, DaftInnerProductCompute) {
     EXPECT_EQ(result3[0], 3) << "s grad ";
     EXPECT_EQ(result3[1], -3) << "r grad ";
 }
+
+class DaftMatrixColProductTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function *f;
+    float *result;
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        f->addOp(Operation::column("xy", 2));
+        f->addOp(Operation::matrix("abcd", 2, 2));
+        f->addOp(Operation::matrixProduct("f", "abcd", "xy", 2, 2, 1));
+        f->compile(); 
+
+        result = new float[2];
+    }
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete [] result;
+        delete f;
+    }
+};
+
+TEST_F(DaftMatrixColProductTest, DaftMatrixColProductCompute) {
+    f->setValue("abcd", {1,-1,-1,1});
+    f->setValue("xy", {1,2});
+    f->compute();
+    f->getValue("f", result);
+    EXPECT_EQ(result[0],-1) << "compute0";
+    EXPECT_EQ(result[1],1) << "compute1";
+
+
+}

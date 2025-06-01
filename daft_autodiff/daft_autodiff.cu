@@ -15,8 +15,11 @@ namespace DA {
             case OperationType::InputColumn:
                 o << "InputColumn";
                 break;
-            case OperationType::MultiplyByMatrix:
-                o << "MultiplyByMatrix";
+            case OperationType::InputMatrix:
+                o << "InputMatrix";
+                break;
+            case OperationType::MatrixProduct:
+                o << "MatrixProduct";
                 break;
             case OperationType::LeakyReLU:
                 o << "LeakyReLU";
@@ -72,15 +75,31 @@ namespace DA {
                , .name{name} };
     }
 
-    Operation Operation::multipleByMatrix(string name, uint rows, uint cols, string target) {
-        return { .opType=OperationType::MultiplyByMatrix
-               , .workingSize = rows*cols
-               , .resultSize = rows
+    Operation Operation::matrix(string name, uint rows, uint cols) {
+        return { .opType=OperationType::InputMatrix
+               , .workingSize = 0
+               , .resultSize = rows*cols
                , .gradSize = rows*cols
                , .rows = rows
                , .cols = cols
+               , .name{name} };
+              
+    }
+
+    Operation Operation::matrixProduct(string name, string target1, string target2, uint target1Rows, uint target1Cols, uint target2Cols) {
+        return { .opType=OperationType::MatrixProduct
+               , .workingSize = target1Rows*target1Cols
+               , .resultSize = target1Rows*target1Cols
+               , .gradSize = target1Rows*target1Cols
+               , .rows = target1Rows
+               , .cols = target2Cols
                , .name{name} 
-               , .config{ (BasicConfig) {.target{target}}}
+               , .config{ (BinaryMatrixConfig) { .target1{target1}
+                                               , .target2{target2}
+                                               , .target1Rows = target1Rows
+                                               , .target1Cols = target1Cols
+                                               , .target2Cols = target2Cols
+                                               }}
                };
     }    
 
@@ -275,20 +294,20 @@ namespace DA {
                     float alpha = 1;
                     cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1);
                 } break;
-                case OperationType::MultiplyByMatrix: {
-                    BasicConfig opConfig = get<BasicConfig>(op.config);
+                case OperationType::MatrixProduct: {
+                    //BasicConfig opConfig = get<BasicConfig>(op.config);
 
-                    float *matrixGrad = memLocs[name+"_grad"];
-                    float *colGrad = memLocs[opConfig.target+"_grad"];
+                    //float *matrixGrad = memLocs[name+"_grad"];
+                    //float *colGrad = memLocs[opConfig.target+"_grad"];
 
-                    // where should the values of the matrix live?
-                    // this is tricky because of the matrix is the result of a
-                    // computation its going to be in the _result of another
-                    // operation. So this is probably the wrong thing to do.
-                    // it's probably better to have a generic InputMatrix and a
-                    // binary op that is MatrixColumnMult.
-                    float *matrixValue = memLocs[name+"_working"];
-                    float *colValue = memLocs[opConfig.target+"_grad"];
+                    //// where should the values of the matrix live?
+                    //// this is tricky because of the matrix is the result of a
+                    //// computation its going to be in the _result of another
+                    //// operation. So this is probably the wrong thing to do.
+                    //// it's probably better to have a generic InputMatrix and a
+                    //// binary op that is MatrixColumnMult.
+                    //float *matrixValue = memLocs[name+"_working"];
+                    //float *colValue = memLocs[opConfig.target+"_grad"];
 
 
 
@@ -306,20 +325,39 @@ namespace DA {
             switch(op.opType) {
                 case OperationType::InputColumn:
                     // basically noop
-                    break;
                 break;
-                case OperationType::MultiplyByMatrix: {
-                    BasicConfig opConfig = get<BasicConfig>(op.config);
+                case OperationType::InputMatrix:
+                    // this is the same as InputColumn.  InputColumn is redundant
+                break;
+                case OperationType::MatrixProduct: {
+                    BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
                     float alpha = 1;
                     float beta = 0;
-                    float* d_matrix = memLocs[op.name+"_working"];
-                    float* d_col = memLocs[opConfig.target+"_result"];
+                    float* d_matrix1 = memLocs[opConfig.target1+"_result"];
+                    float* d_matrix2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
 
-                    cublasSgemv(*cublasH, CUBLAS_OP_T, op.cols, op.rows,
-                        &alpha, d_matrix, op.cols,
-                        d_col, 1, &beta, d_result, 1);
-                    
+                    //cublasSgemv(*cublasH, CUBLAS_OP_T, opConfig.target1Rows, opConfig.target1Cols,
+                    //    &alpha, d_matrix1, opConfig.target1Cols,
+                    //    d_matrix2, 1, &beta, d_result, 1);
+
+                    if(CUBLAS_STATUS_SUCCESS != cublasSgemm( *cublasH
+                               , CUBLAS_OP_N
+                               , CUBLAS_OP_N
+                               , opConfig.target1Rows
+                               , opConfig.target2Cols
+                               , opConfig.target1Cols
+                               , &alpha
+                               , d_matrix1
+                               , opConfig.target1Rows
+                               , d_matrix2
+                               , opConfig.target1Cols
+                               , &beta
+                               , d_result
+                               , op.rows)) {
+                        cout << "failing due to error" << endl;
+                        exit(-1);
+                    }
 
                 break;}
 
