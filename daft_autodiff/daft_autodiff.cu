@@ -88,9 +88,9 @@ namespace DA {
 
     Operation Operation::matrixProduct(string name, string target1, string target2, uint target1Rows, uint target1Cols, uint target2Cols) {
         return { .opType=OperationType::MatrixProduct
-               , .workingSize = target1Rows*target1Cols
-               , .resultSize = target1Rows*target1Cols
-               , .gradSize = target1Rows*target1Cols
+               , .workingSize = 0 
+               , .resultSize = target1Rows*target2Cols
+               , .gradSize = target1Rows*target1Cols + target1Cols*target2Cols
                , .rows = target1Rows
                , .cols = target2Cols
                , .name{name} 
@@ -294,27 +294,60 @@ namespace DA {
                     float alpha = 1;
                     cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1);
                 } break;
-                case OperationType::MatrixProduct: {
-                    //BasicConfig opConfig = get<BasicConfig>(op.config);
-
-                    //float *matrixGrad = memLocs[name+"_grad"];
-                    //float *colGrad = memLocs[opConfig.target+"_grad"];
-
-                    //// where should the values of the matrix live?
-                    //// this is tricky because of the matrix is the result of a
-                    //// computation its going to be in the _result of another
-                    //// operation. So this is probably the wrong thing to do.
-                    //// it's probably better to have a generic InputMatrix and a
-                    //// binary op that is MatrixColumnMult.
-                    //float *matrixValue = memLocs[name+"_working"];
-                    //float *colValue = memLocs[opConfig.target+"_grad"];
-
-
-
-
-
-
+                case OperationType::InputMatrix: {
+                    float *grad = memLocs[name+"_grad"];
+                    float alpha = 1;
+                    cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1);
                 } break;
+                case OperationType::MatrixProduct: {
+                    BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
+
+                    float *matrixValue = memLocs[opConfig.target1+"_result"];
+                    float *colValue = memLocs[opConfig.target2+"_result"];
+                    float *matrixGrad = memLocs[op.name+"_grad"];
+                    float *colGrad = matrixGrad + opConfig.target1Rows * opConfig.target1Cols;
+
+                    float alpha = 1;
+                    float beta = 0;
+
+                    cublasSgemm( *cublasH
+                               , CUBLAS_OP_T
+                               , CUBLAS_OP_N
+                               , opConfig.target1Cols
+                               , opConfig.target1Rows
+                               , 1
+                               , &alpha
+                               , colValue
+                               , 1
+                               , seed
+                               , 1
+                               , &beta
+                               , matrixGrad
+                               , opConfig.target1Cols); 
+                    cublasSgemm( *cublasH
+                               , CUBLAS_OP_N
+                               , CUBLAS_OP_T
+                               , 1
+                               , opConfig.target1Cols
+                               , opConfig.target1Rows
+                               , &alpha
+                               , seed
+                               , 1
+                               , matrixValue
+                               , opConfig.target1Cols
+                               , &beta
+                               , colGrad
+                               , 1);
+                    computeGrad(opConfig.target1, matrixGrad);
+                    computeGrad(opConfig.target2, colGrad);
+                } break;
+                case OperationType::Scalar: {
+                } break;
+                case OperationType::Add: {
+                } break;
+                case OperationType::LeakyReLU: {
+                } break;
+
             }
         }
     }
@@ -336,10 +369,6 @@ namespace DA {
                     float* d_matrix1 = memLocs[opConfig.target1+"_result"];
                     float* d_matrix2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
-
-                    //cublasSgemv(*cublasH, CUBLAS_OP_T, opConfig.target1Rows, opConfig.target1Cols,
-                    //    &alpha, d_matrix1, opConfig.target1Cols,
-                    //    d_matrix2, 1, &beta, d_result, 1);
 
                     if(CUBLAS_STATUS_SUCCESS != cublasSgemm( *cublasH
                                , CUBLAS_OP_N

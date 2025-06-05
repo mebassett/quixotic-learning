@@ -111,6 +111,7 @@ protected:
     cublasHandle_t cublasH;
     Function *f;
     float *result;
+    float *matrixGrad;
     void SetUp() override {
         cublasCreate(&cublasH);
         f = new Function(&cublasH);
@@ -120,10 +121,12 @@ protected:
         f->compile(); 
 
         result = new float[2];
+        matrixGrad = new float[4];
     }
     void TearDown() override {
         cublasDestroy(cublasH);
         delete [] result;
+        delete [] matrixGrad;
         delete f;
     }
 };
@@ -132,9 +135,15 @@ TEST_F(DaftMatrixColProductTest, DaftMatrixColProductCompute) {
     f->setValue("abcd", {1,-1,-1,1});
     f->setValue("xy", {1,2});
     f->compute();
+    f->computeGrad("f");
     f->getValue("f", result);
+    f->getGrad("abcd", matrixGrad);
     EXPECT_EQ(result[0],-1) << "compute0";
     EXPECT_EQ(result[1],1) << "compute1";
+    EXPECT_EQ(matrixGrad[0], 1) << "abcd grad";
+    EXPECT_EQ(matrixGrad[1], 2) << "abcd grad";
+    EXPECT_EQ(matrixGrad[2], 1) << "abcd grad";
+    EXPECT_EQ(matrixGrad[3], 2) << "abcd grad";
 
 
 }
