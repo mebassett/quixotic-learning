@@ -108,8 +108,15 @@ delete f; // this will try to delete x twice, causes existential problems.
 - [ ] transform me maybe?
 
 
+## misc notes
 
+### 20250627
 
+I noticed that after upgraded to glibc 2.40-26.fc41 I was no longer able to compile the test suite.
+I was getting errors like this
+concurrence.h:252:32: error: cannot convert '<brace-enclosed initializer list>' to 'unsigned int' in initialization
+  252 |     __gthread_cond_t _M_cond = __GTHREAD_COND_INIT;
 
+using `dnf downgrade glibc` to downgrade to 2.40-3.fc41 seemed to have fixed the problem.
 
-
+there are similar bug reports on glibc 2.41.  e.g. https://sourceware.org/bugzilla/show_bug.cgi?id=32621
