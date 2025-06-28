@@ -5,39 +5,6 @@
 
 using namespace DA;
 
-class DaftScalarTest : public testing::Test {
-protected:
-    cublasHandle_t cublasH;
-
-    Function* f;
-    float* result;
-    void SetUp() override
-    {
-        cublasCreate(&cublasH);
-        f = new Function(&cublasH);
-
-        f->addOp(Operation::column("xy",2));
-        f->addOp(Operation::scalarMultiply("result","xy",2,1,5.0));
-        f->compile();
-        result = new float[2];
-
-    }
-    void TearDown() override
-    {
-        cublasDestroy(cublasH);
-        delete [] result;
-        delete f;
-    }
-};
-
-TEST_F(DaftScalarTest, DaftScalarCompute){
-    f->setValue("xy", {1,2});
-    f->compute();
-    f->getValue("result", result);
-    EXPECT_EQ(result[0],5);
-    EXPECT_EQ(result[1],10);
-}
-
 
 class DaftInnerProductTest : public testing::Test {
 protected:
@@ -146,4 +113,41 @@ TEST_F(DaftMatrixColProductTest, DaftMatrixColProductCompute) {
     EXPECT_EQ(matrixGrad[3], 2) << "abcd grad";
 
 
+}
+
+class DaftScalarTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+
+    Function *f;
+    float *result;
+    float *resultGrad;
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        f->addOp(Operation::column("xy", 2));
+        f->addOp(Operation::scalarMultiply("test", "xy", 2, 1, 5.0));
+        f->compile();
+
+        result = new float[2];
+        resultGrad = new float[2];
+    }
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete [] result;
+        delete [] resultGrad;
+        delete f;
+    }
+};
+
+TEST_F(DaftScalarTest, DaftScalarCompute) {
+    f->setValue("xy",{1,2});
+    f->compute();
+    f->computeGrad("test");
+    f->getValue("test", result);
+    f->getGrad("xy", resultGrad);
+    EXPECT_EQ(result[0], 5) << "compute0";
+    EXPECT_EQ(result[1], 10) << "compute1";
+    EXPECT_EQ(resultGrad[0], 5) << "grad0";
+    EXPECT_EQ(resultGrad[1], 5) << "grad1";
 }

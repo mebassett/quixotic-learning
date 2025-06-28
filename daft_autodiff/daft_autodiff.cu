@@ -342,6 +342,14 @@ namespace DA {
                     computeGrad(opConfig.target2, colGrad);
                 } break;
                 case OperationType::Scalar: {
+                    ScalarConfig opConfig = get<ScalarConfig>(op.config);
+                    float *grad = memLocs[op.name+"_grad"];
+                    float *result = memLocs[op.name+"_result"];
+
+                    cublasScopy(*cublasH, op.cols * op.rows, seed, 1, grad, 1);
+                    cublasSscal(*cublasH, op.cols * op.rows, &(opConfig.scale), grad, 1);
+                    computeGrad(opConfig.target, grad);
+
                 } break;
                 case OperationType::Add: {
                 } break;
