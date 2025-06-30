@@ -56,7 +56,7 @@ struct Operation {
     static Operation column(string name, uint rows);
     static Operation matrix(string name, uint rows, uint cols);
     static Operation matrixProduct(string name, string target1, string target2, uint target1Rows, uint target1Cols, uint target2Cols);
-    static Operation applyLeakyReLU(string name, string target);
+    static Operation applyLeakyReLU(string name, string target, uint rows, uint cols);
     static Operation innerProduct(string name, string target1, string target2, uint rows);
     static Operation add(string name, string target1, string target2, uint rows, uint cols);
     static Operation scalarMultiply(string name, string target, uint rows, uint cols, float scale);

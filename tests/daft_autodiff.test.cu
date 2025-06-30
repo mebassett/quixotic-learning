@@ -151,3 +151,83 @@ TEST_F(DaftScalarTest, DaftScalarCompute) {
     EXPECT_EQ(resultGrad[0], 5) << "grad0";
     EXPECT_EQ(resultGrad[1], 5) << "grad1";
 }
+
+class DaftAddTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+
+    Function *f;
+    float *result;
+    float *resultGrad;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        f->addOp(Operation::column("xy",2));
+        f->addOp(Operation::add("f","xy","xy", 2, 1));
+        f->compile();
+
+        result = new float[2];
+        resultGrad = new float[2];
+    }
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete [] result;
+        delete [] resultGrad;
+        delete f;
+    }
+};
+TEST_F(DaftAddTest, DaftAddCompute) {
+    f->setValue("xy",{1,2});
+    f->compute();
+    f->computeGrad("f");
+    f->getValue("f", result);
+    f->getGrad("xy", resultGrad);
+    EXPECT_EQ(result[0], 2) << "compute0";
+    EXPECT_EQ(result[1], 4) << "compute1";
+    EXPECT_EQ(resultGrad[0], 2) << "grad0";
+    EXPECT_EQ(resultGrad[1], 2) << "grad1";
+}
+
+class DaftLeakyReLUTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+
+    Function *f;
+    float *result;
+    float *resultGrad;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+
+        f = new Function(&cublasH);
+        f->addOp(Operation::matrix("z",2,2));
+        f->addOp(Operation::applyLeakyReLU("f", "z", 2,2));
+        f->compile();
+
+        result = new float[4];
+        resultGrad = new float[4];
+    }
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete [] result;
+        delete [] resultGrad;
+        delete f;
+    }
+};
+
+TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
+    f->setValue("z", { 500, -500, 0.5, -1 });
+    f->compute();
+    f->computeGrad("f");
+    f->getValue("f", result);
+    f->getGrad("z", resultGrad);
+
+    float values[4] = { 500, -5, 0.5, -0.01 };
+    float grads[4] = { 1, 0.01, 1, 0.01 };
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(result[i], values[i]) << "LeakyReLU compute";
+        EXPECT_EQ(resultGrad[i], grads[i]) << "z grad";
+    }
+
+}

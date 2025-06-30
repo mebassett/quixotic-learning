@@ -1,6 +1,7 @@
 #include "daft_autodiff.h"
 #include <algorithm>
 #include <cublas_v2.h>
+#include <cuda_runtime.h>
 #include <cassert>
 #include <iostream>
 #include <vector>
@@ -65,6 +66,16 @@ namespace DA {
             result[i] = value;
     }
 
+    __global__ void doComponentProduct(int rows, int cols, float* grad, float* seed,
+        float* result)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        if (row < rows && col < cols) {
+            result[row * cols + col] = seed[row * cols + col] * grad[row * cols + col];
+        }
+    }
+
     Operation Operation::column(string name, uint rows) {
         return { .opType=OperationType::InputColumn
                , .workingSize = 0
@@ -103,16 +114,16 @@ namespace DA {
                };
     }    
 
-    Operation Operation::applyLeakyReLU(string name, string target) {
+    Operation Operation::applyLeakyReLU(string name, string target, uint rows, uint cols) {
         BasicConfig config = { .target{target}};
         return { .opType=OperationType::LeakyReLU
-                , .workingSize = 0
-                , .resultSize = 0
-                , .gradSize = 0
-                , .rows=0
-                , .cols=0
+                , .workingSize = rows*cols
+                , .resultSize = rows*cols
+                , .gradSize = rows*cols
+                , .rows=rows
+                , .cols=cols
                 , .name{name}
-                , .noOp = true 
+                , .noOp = false 
                 , .config{ (BasicConfig){ .target{target} } }
                 };
     }
@@ -136,7 +147,7 @@ namespace DA {
         return { .opType=OperationType::Add
                , .workingSize = 0
                , .resultSize = rows*cols
-               , .gradSize = 2*rows*cols
+               , .gradSize = rows*cols
                , .rows = rows
                , .cols = cols
                , .name{name}
@@ -352,8 +363,25 @@ namespace DA {
 
                 } break;
                 case OperationType::Add: {
+                    BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
+                    float* copySeed = memLocs[op.name+"_grad"];
+
+                    cudaMemcpy(copySeed, seed, op.rows * op.cols * sizeof(float), cudaMemcpyDeviceToDevice);
+                    computeGrad(opConfig.target1, seed);
+                    computeGrad(opConfig.target2, copySeed);
                 } break;
                 case OperationType::LeakyReLU: {
+                    BasicConfig opConfig = get<BasicConfig>(op.config);
+                    float* newSeed = memLocs[op.name+"_working"];
+                    float* grad = memLocs[op.name+"_grad"];
+
+                    dim3 bd(32, 32, 1);
+                    dim3 gd(ceil(op.cols / 32.0), ceil(op.cols / 32.0), 1);
+
+                    doComponentProduct<<<gd, bd>>>(op.rows, op.cols, grad, seed, newSeed);
+
+                    computeGrad(opConfig.target, newSeed);
+
                 } break;
 
             }
@@ -399,15 +427,26 @@ namespace DA {
                 break;}
 
                 case OperationType::LeakyReLU:{ 
+                    // TODO accessing memLocs like this is quite error prone.
+                    // should probably get some accessor functions so I don't make mistakes
+                    // the compile can't catch...
+                            
                     BasicConfig opConfig = get<BasicConfig>(op.config);
                     float* d_col = memLocs[opConfig.target+"_result"];
                     float* d_grad = memLocs[op.name+"_grad"];
                     float* d_result = memLocs[op.name+"_result"];
 
                     dim3 bd(32, 32, 1);
-                    dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32), 1);
+                    dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
 
+                    cudaError_t err;
                     doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result);
+                    err = cudaGetLastError();
+                    if (err != cudaSuccess) {
+                        printf("Kernel launch error in ColLeakyReLU::compute: %s\n",
+                            cudaGetErrorString(err));
+                        exit(1);
+                    }
 
 
                 break;}
