@@ -14,9 +14,13 @@ add_subdirectory(daft_autodiff)
 add_subdirectory(mnistdata)
 
 add_executable(ffnn examples/ffnn/ffnn.cu)
+add_executable(daft-ffnn examples/ffnn/daft-ffnn.cu)
+target_include_directories(ffnn PUBLIC ${PROJECT_SOURCE_DIR}/daft_autodiff)
 target_include_directories(ffnn PUBLIC ${PROJECT_SOURCE_DIR}/silly_autodiff)
 target_include_directories(ffnn PUBLIC ${PROJECT_SOURCE_DIR}/mnist)
 target_link_libraries(ffnn PUBLIC cublas silly_autodiff mnistdata)
+target_link_libraries(daft-ffnn PUBLIC cublas daft_autodiff mnistdata)
+
 
 add_executable(lenet examples/lenet/lenet.cu)
 target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/silly_autodiff)
