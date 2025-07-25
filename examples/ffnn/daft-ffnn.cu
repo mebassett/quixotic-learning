@@ -35,6 +35,7 @@ int fromModelOutput(float* out)
 }
 
 int main() {
+    float learningRate = 0.025;
     cublasHandle_t cublasH;
 
     cublasCreate(&cublasH);
@@ -66,6 +67,7 @@ int main() {
     f->setValue("weights2", weights2);
 
 
+    Training_Data rows = load_data_from_file("../data/mnist_train.txt", 60000);
     Training_Data testRows = load_data_from_file("../data/mnist_test.txt", 10000);
     int count = 1;
     int numRight = 0;
@@ -90,13 +92,61 @@ int main() {
         int out = fromModelOutput(prediction);
         errorRate += *error;
         if(out == row.y) numRight++;
-        
-
+        delete prediction;
+        delete error;
     }
     cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
     cout << "model error on test set:" << errorRate << " .\n";
 
+    while (count <= 1) {
+        cout << "starting epoch " << count << endl;
+        for(auto row : rows) {
+            f->resetGrad();
 
+            vector<float> input (begin(row.x), end(row.x));
+            vector<float> target (begin(row.t), end(row.t));
+
+            f->setValue("input", input);
+            f->setValue("targetInput", target);
+
+            f->compute();
+            f->computeGrad("error");
+            f->gradDescent("weights1", learningRate);
+            f->gradDescent("weights2", learningRate);
+            trainingExamples++;
+            if (trainingExamples % 10000 == 0)
+                cout << "done " << trainingExamples << " so far." << endl;
+        }
+        numRight = 0;
+        errorRate = 0.0;
+        trainingExamples = 0;
+        for(auto row : testRows) {
+            vector<float> input (begin(row.x), end(row.x));
+            vector<float> target (begin(row.t), end(row.t));
+            f->setValue("input", input);
+            f->setValue("targetInput", target);
+            float *prediction = new float[OUTPUT_SIZE];
+            float *error = new float;
+
+            f->compute();
+            f->getValue("prediction", prediction);
+            f->getValue("error", error);
+
+            int out = fromModelOutput(prediction);
+            errorRate += *error;
+            if(out == row.y) numRight++;
+            delete prediction;
+            delete error;
+        }
+        cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
+        cout << "model error on test set:" << errorRate << " .\n";
+        count++;
+    }
+
+
+
+    cublasDestroy(cublasH);
+    delete f;
     
 
 

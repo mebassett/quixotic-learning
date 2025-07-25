@@ -195,6 +195,17 @@ namespace DA {
         }
 
     }
+
+    void Function::resetGrad() {
+        for(auto op : ops){
+            dim3 gd(1, ceil(op.gradSize / 32.0), 1);
+            dim3 bd(1, 1024, 1);
+            doFill<<<gd, bd>>>(op.gradSize, 1, 0.0f, memLocs[op.name+"_grad"]);
+            cudaDeviceSynchronize();
+        }
+        
+    }
+
     Function::~Function() {
         cudaFree(d_value);
         
@@ -221,6 +232,24 @@ namespace DA {
     void Function::setValue(string name, vector<float> value) {
         // trusting the user to give us a vector of the right size! eek!    
         cudaMemcpy(memLocs[name+"_working"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
+    }
+
+    void Function::gradDescent(string name, float learningRate) {
+        float alpha = 1;
+        float beta = -1 * learningRate;
+        Operation *op;
+
+        for(auto needle : ops){
+            if(needle.name == name) {
+                op = &needle;
+                break;
+            }
+        }
+
+        float* d_value  = memLocs[name+"_result"];
+        float* d_grad  = memLocs[name+"_grad"];
+
+
     }
 
     void Function::getValue(string name, float* result) {

@@ -70,9 +70,11 @@ struct Function {
     cublasHandle_t* cublasH;
     Function(cublasHandle_t* cublasH);
     void compile();
+    void resetGrad();
     void addOp(Operation); 
     void setValue(string name, vector<float> value);
     void compute();
+    void gradDescent(string name, float learningRate);
     void getValue(string name, float* result);
     void getGrad(string name, float* result);
     void computeGrad(string name, float* seed);
