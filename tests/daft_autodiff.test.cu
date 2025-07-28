@@ -226,8 +226,8 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
     float values[4] = { 500, -5, 0.5, -0.01 };
     float grads[4] = { 1, 0.01, 1, 0.01 };
     for (int i = 0; i < 4; i++) {
-        EXPECT_EQ(result[i], values[i]) << "LeakyReLU compute";
-        EXPECT_EQ(resultGrad[i], grads[i]) << "z grad";
+        EXPECT_EQ(result[i], values[i]) << "LeakyReLU compute (" << i << ")";
+        EXPECT_EQ(resultGrad[i], grads[i]) << "z grad (" << i << ")";
     }
 
 }
