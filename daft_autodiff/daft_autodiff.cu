@@ -227,7 +227,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
     void Function::resetGrad() {
         cudaErrCk( cudaMemset(d_value, 0, gradSize * sizeof(float)) );
         cudaErrCk( cudaMemset(d_value+gradSize+resultSize, 0, workingSize * sizeof(float)) );
-        cudaErrCk( cudaDeviceSynchronize() );
         
     }
 
@@ -282,7 +281,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                      , op->cols, op->rows, &alpha
                      , result, op->cols, &beta
                      , grad, op->cols, result, op->cols) );
-        cudaErrCk( cudaDeviceSynchronize() );
 
     }
 
@@ -329,10 +327,8 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         dim3 gd(ceil(op->cols / 32.0), ceil(op->rows / 32.0), 1);
         dim3 bd(32, 32, 1);
         doFill<<<gd, bd>>>(op->rows, op->cols, 1.0f, seed);
-        cudaDeviceSynchronize();
 
         computeGrad(name, seed);
-        cudaDeviceSynchronize();
         cudaFree(seed);
         
 
@@ -365,7 +361,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 cublasErrCk( cublasScopy(*cublasH, opConfig.targetRows, col2, 1, vec2, 1) );
                 cublasErrCk( cublasSscal(*cublasH, opConfig.targetRows, seed, vec2, 1) );
                 cublasErrCk( cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_HOST ) );
-                cudaErrCk( cudaDeviceSynchronize() );
 
                 
                 computeGrad(opConfig.target2, vec1);
@@ -374,12 +369,10 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             case OperationType::InputColumn: {
                 float alpha = 1;
                 cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
-                cudaErrCk( cudaDeviceSynchronize() );
             } break;
             case OperationType::InputMatrix: {
                 float alpha = 1;
                 cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
-                cudaErrCk( cudaDeviceSynchronize() );
             } break;
             case OperationType::MatrixProduct: {
                 BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
@@ -420,7 +413,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                            , &beta
                            , colGrad
                            , 1) );
-                cudaErrCk( cudaDeviceSynchronize() );
                 computeGrad(opConfig.target1, matrixGrad);
                 computeGrad(opConfig.target2, colGrad);
             } break;
@@ -430,7 +422,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
                 cublasErrCk( cublasScopy(*cublasH, op.cols * op.rows, seed, 1, grad, 1) );
                 cublasErrCk( cublasSscal(*cublasH, op.cols * op.rows, &(opConfig.scale), grad, 1) );
-                cudaErrCk( cudaDeviceSynchronize() );
                 computeGrad(opConfig.target, grad);
 
             } break;
@@ -450,7 +441,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 dim3 gd(ceil(op.cols / 32.0), ceil(op.cols / 32.0), 1);
 
                 doComponentProduct<<<gd, bd>>>(op.rows, op.cols, grad, seed, newSeed);
-                cudaErrCk( cudaDeviceSynchronize() );
 
                 computeGrad(opConfig.target, newSeed);
 
@@ -491,7 +481,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                                , &beta
                                , d_result
                                , opConfig.target2Cols) ) 
-                    cudaErrCk( cudaDeviceSynchronize() );
 
                 break;}
 
@@ -508,11 +497,9 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     dim3 bd(32, 32, 1);
                     dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
 
-                    cudaErrCk( cudaDeviceSynchronize() );
 
                     doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result);
                     cudaErrCk( cudaPeekAtLastError() );
-                    cudaErrCk( cudaDeviceSynchronize() );
 
 
                 break;}
@@ -525,7 +512,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     
                     cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols, d_v1, 1, d_result, 1) );
                     cublasErrCk( cublasSaxpy(*cublasH, op.rows * op.cols, &alpha, d_v2, 1, d_result, 1) );
-                    cudaErrCk( cudaDeviceSynchronize() );
                 break;}
                 case OperationType::Scalar:{
                     ScalarConfig opConfig = get<ScalarConfig>(op.config);
@@ -533,7 +519,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* d_result = memLocs[op.name+"_result"];
                     cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols, d_target, 1, d_result, 1) );
                     cublasErrCk( cublasSscal(*cublasH, op.rows * op.cols, &(opConfig.scale), d_result, 1) );
-                    cudaErrCk( cudaDeviceSynchronize() );
                 break;}
                 case OperationType::InnerProduct:{
                     BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
@@ -541,11 +526,9 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* d_v2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
                     cublasErrCk( cublasSdot(*cublasH, opConfig.targetRows, d_v1, 1, d_v2, 1, d_result) );
-                    cudaErrCk( cudaDeviceSynchronize() );
 
                 break;}
             }
-            cudaErrCk( cudaDeviceSynchronize() );
         }
 
     }
