@@ -100,7 +100,7 @@ int main() {
 
     while (count <= 1) {
         cout << "starting epoch " << count << endl;
-        for(auto row : rows) {
+        for(auto row: rows) {
             f->resetGrad();
 
             vector<float> input (begin(row.x), end(row.x));
@@ -111,6 +111,7 @@ int main() {
 
             f->compute();
             f->computeGrad("error");
+
             f->gradDescent("weights1", learningRate);
             f->gradDescent("weights2", learningRate);
             trainingExamples++;

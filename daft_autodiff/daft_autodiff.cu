@@ -10,6 +10,34 @@ using namespace std;
 
 namespace DA {
 
+#define cudaErrCk(ans) { cudaAssert((ans), __FILE__, __LINE__); }
+inline void cudaAssert(cudaError_t err, const char *file, int line) {
+    if(err != cudaSuccess) {
+        fprintf(stderr, "CudaAssert: %s %s %d\n", cudaGetErrorString(err), file, line);
+        exit(err);
+    }
+}
+
+#define cublasErrCk(ans) { cublasAssert((ans), __FILE__, __LINE__); }
+inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
+    if(err != CUBLAS_STATUS_SUCCESS) {
+      const char* errMsg;
+      switch(err) {
+         case CUBLAS_STATUS_NOT_INITIALIZED: errMsg = "CUBLAS_STATUS_NOT_INITIALIZED"; break;
+         case CUBLAS_STATUS_ALLOC_FAILED: errMsg = "CUBLAS_STATUS_ALLOC_FAILED"; break;
+         case CUBLAS_STATUS_INVALID_VALUE: errMsg = "CUBLAS_STATUS_INVALID_VALUE"; break;
+         case CUBLAS_STATUS_ARCH_MISMATCH: errMsg = "CUBLAS_STATUS_ARCH_MISMATCH"; break;
+         case CUBLAS_STATUS_MAPPING_ERROR: errMsg = "CUBLAS_STATUS_MAPPING_ERROR"; break;
+         case CUBLAS_STATUS_EXECUTION_FAILED: errMsg = "CUBLAS_STATUS_EXECUTION_FAILED"; break;
+         case CUBLAS_STATUS_INTERNAL_ERROR: errMsg = "CUBLAS_STATUS_INTERNAL_ERROR"; break;
+         case CUBLAS_STATUS_NOT_SUPPORTED: errMsg = "CUBLAS_STATUS_NOT_SUPPORTED"; break;
+         case CUBLAS_STATUS_LICENSE_ERROR: errMsg = "CUBLAS_STATUS_LICENSE_ERROR"; break;
+         default: errMsg = "Unknown CUBLAS error"; break;
+      }
+      fprintf(stderr,"CUBLAS assert: %s %s %d\n", errMsg, file, line); 
+      exit(err);
+    }
+}
 
     ostream& operator<<(ostream &o, const OperationType t) {
         switch(t) {
@@ -174,35 +202,32 @@ namespace DA {
     }
 
     void Function::compile() {
-        int totalSize = 0;
+        totalSize = 0; gradSize = 0; workingSize = 0; resultSize = 0;
         for(auto op : ops){
             totalSize += op.workingSize + op.resultSize + op.gradSize;
+            gradSize += op.gradSize;
+            workingSize += op.workingSize;
+            resultSize += op.resultSize;
         }
         cudaMalloc((void**)&d_value,  totalSize  * sizeof(float));
         cudaMemset(d_value, 0, totalSize * sizeof(float));
-        dim3 gd(1, ceil(totalSize / 32.0), 1);
-        dim3 bd(1, 1024, 1);
-        doFill<<<gd, bd>>>(totalSize, 1, 0.0f, d_value);
-        cudaDeviceSynchronize();
         
-        totalSize = 0;
+        int idxGradSize = 0, idxWorkingSize = 0, idxResultSize = 0;
         for(auto op:ops){
-            memLocs[op.name+"_working"] = d_value + totalSize;
-            memLocs[op.name+"_result"] = d_value + totalSize + op.workingSize;
-            memLocs[op.name+"_grad"] = d_value + totalSize + op.workingSize + op.resultSize;
-            totalSize += op.gradSize + op.resultSize + op.workingSize;
+            memLocs[op.name+"_grad"] = d_value + idxGradSize;
+            idxGradSize += op.gradSize;
+            memLocs[op.name+"_result"] = d_value + gradSize + idxResultSize;
+            idxResultSize += op.resultSize;
+            memLocs[op.name+"_working"] = d_value + gradSize + resultSize + idxWorkingSize;
+            idxWorkingSize += op.workingSize;
 
         }
-
     }
 
     void Function::resetGrad() {
-        for(auto op : ops){
-            dim3 gd(1, ceil(op.gradSize / 32.0), 1);
-            dim3 bd(1, 1024, 1);
-            doFill<<<gd, bd>>>(op.gradSize, 1, 0.0f, memLocs[op.name+"_grad"]);
-            cudaDeviceSynchronize();
-        }
+        cudaErrCk( cudaMemset(d_value, 0, gradSize * sizeof(float)) );
+        cudaErrCk( cudaMemset(d_value+gradSize+resultSize, 0, workingSize * sizeof(float)) );
+        cudaErrCk( cudaDeviceSynchronize() );
         
     }
 
@@ -231,7 +256,7 @@ namespace DA {
 
     void Function::setValue(string name, vector<float> value) {
         // trusting the user to give us a vector of the right size! eek!    
-        cudaMemcpy(memLocs[name+"_working"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
+        cudaMemcpy(memLocs[name+"_result"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
     }
 
     void Function::gradDescent(string name, float learningRate) {
@@ -245,10 +270,19 @@ namespace DA {
                 break;
             }
         }
+        if(op->opType != OperationType::InputMatrix) return;
 
-        float* d_value  = memLocs[name+"_result"];
-        float* d_grad  = memLocs[name+"_grad"];
+        float* result  = memLocs[name+"_result"];
+        float* grad  = memLocs[name+"_grad"];
 
+
+        cublasErrCk ( cublasSgeam( *cublasH
+                     , CUBLAS_OP_N
+                     , CUBLAS_OP_N
+                     , op->cols, op->rows, &alpha
+                     , result, op->cols, &beta
+                     , grad, op->cols, result, op->cols) );
+        cudaErrCk( cudaDeviceSynchronize() );
 
     }
 
@@ -278,7 +312,11 @@ namespace DA {
 
     void Function::computeGrad(string name) {
         const auto op = find_if(ops.begin(), ops.end(), [name](auto needle) { return needle.name == name;});
-        if(op == ops.end()) return;
+        if(op == ops.end()) {
+          cout << "computeGrad cannot find op " << name << endl;
+          exit(1);
+          return;
+        }
         float* seed;
         cudaError_t err;
         int size = op->rows * op->cols * sizeof(float);
@@ -302,118 +340,122 @@ namespace DA {
 
     void Function::computeGrad(string name, float* seed){
         const auto it = find_if(ops.begin(), ops.end(), [name](auto needle) { return needle.name == name;});
+        if(it == ops.end()) {
+          cout << "computeGrad* cannot find op " << name << endl;
+          exit(1);
+          return;
+        }
 
-        if(it != ops.end()) {
-            Operation op = *it;
-            float *grad = memLocs[name+"_grad"];
-            switch(op.opType) {
-                case OperationType::InnerProduct: {
-                    BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
-                    float* col1 = memLocs[opConfig.target1+"_result"];
-                    float* col2 = memLocs[opConfig.target2+"_result"];
+        Operation op = *it;
+        float *grad = memLocs[name+"_grad"];
+        switch(op.opType) {
+            case OperationType::InnerProduct: {
+                BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
+                float* col1 = memLocs[opConfig.target1+"_result"];
+                float* col2 = memLocs[opConfig.target2+"_result"];
 
+                float* vec1 = memLocs[name+"_grad"];
+                float* vec2 = memLocs[name+"_grad"] + opConfig.targetRows;
+                
+                cublasErrCk( cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_DEVICE) );
 
-                    float* vec1 = memLocs[name+"_grad"];
-                    float* vec2 = memLocs[name+"_grad"] + opConfig.targetRows;
-                    
-                    cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_DEVICE);
+                cublasErrCk( cublasScopy(*cublasH, opConfig.targetRows, col1, 1, vec1, 1) );
+                cublasErrCk( cublasSscal(*cublasH, opConfig.targetRows, seed, vec1, 1) );
+                
+                cublasErrCk( cublasScopy(*cublasH, opConfig.targetRows, col2, 1, vec2, 1) );
+                cublasErrCk( cublasSscal(*cublasH, opConfig.targetRows, seed, vec2, 1) );
+                cublasErrCk( cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_HOST ) );
+                cudaErrCk( cudaDeviceSynchronize() );
 
-                    cublasScopy(*cublasH, opConfig.targetRows, col1, 1, vec1, 1);
-                    cublasSscal(*cublasH, opConfig.targetRows, seed, vec1, 1);
-                    
-                    cublasScopy(*cublasH, opConfig.targetRows, col2, 1, vec2, 1);
-                    cublasSscal(*cublasH, opConfig.targetRows, seed, vec2, 1);
-                    cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_HOST );
+                
+                computeGrad(opConfig.target2, vec1);
+                computeGrad(opConfig.target1, vec2);
+            } break;
+            case OperationType::InputColumn: {
+                float alpha = 1;
+                cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
+                cudaErrCk( cudaDeviceSynchronize() );
+            } break;
+            case OperationType::InputMatrix: {
+                float alpha = 1;
+                cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
+                cudaErrCk( cudaDeviceSynchronize() );
+            } break;
+            case OperationType::MatrixProduct: {
+                BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
 
-                    
-                    computeGrad(opConfig.target2, vec1);
-                    computeGrad(opConfig.target1, vec2);
-                } break;
-                case OperationType::InputColumn: {
-                    float *grad = memLocs[name+"_grad"];
-                    float alpha = 1;
-                    cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1);
-                } break;
-                case OperationType::InputMatrix: {
-                    float *grad = memLocs[name+"_grad"];
-                    float alpha = 1;
-                    cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1);
-                } break;
-                case OperationType::MatrixProduct: {
-                    BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
+                float *matrixValue = memLocs[opConfig.target1+"_result"];
+                float *colValue = memLocs[opConfig.target2+"_result"];
+                float *matrixGrad = memLocs[op.name+"_grad"];
+                float *colGrad = matrixGrad + opConfig.target1Rows * opConfig.target1Cols;
 
-                    float *matrixValue = memLocs[opConfig.target1+"_result"];
-                    float *colValue = memLocs[opConfig.target2+"_result"];
-                    float *matrixGrad = memLocs[op.name+"_grad"];
-                    float *colGrad = matrixGrad + opConfig.target1Rows * opConfig.target1Cols;
+                float alpha = 1;
+                float beta = 0;
 
-                    float alpha = 1;
-                    float beta = 0;
+                cublasErrCk( cublasSgemm( *cublasH
+                           , CUBLAS_OP_T
+                           , CUBLAS_OP_N
+                           , opConfig.target1Cols
+                           , opConfig.target1Rows
+                           , 1
+                           , &alpha
+                           , colValue
+                           , 1
+                           , seed
+                           , 1
+                           , &beta
+                           , matrixGrad
+                           , opConfig.target1Cols) ); 
+                cublasErrCk( cublasSgemm( *cublasH
+                           , CUBLAS_OP_N
+                           , CUBLAS_OP_T
+                           , 1
+                           , opConfig.target1Cols
+                           , opConfig.target1Rows
+                           , &alpha
+                           , seed
+                           , 1
+                           , matrixValue
+                           , opConfig.target1Cols
+                           , &beta
+                           , colGrad
+                           , 1) );
+                cudaErrCk( cudaDeviceSynchronize() );
+                computeGrad(opConfig.target1, matrixGrad);
+                computeGrad(opConfig.target2, colGrad);
+            } break;
+            case OperationType::Scalar: {
+                ScalarConfig opConfig = get<ScalarConfig>(op.config);
+                float *result = memLocs[op.name+"_result"];
 
-                    cublasSgemm( *cublasH
-                               , CUBLAS_OP_T
-                               , CUBLAS_OP_N
-                               , opConfig.target1Cols
-                               , opConfig.target1Rows
-                               , 1
-                               , &alpha
-                               , colValue
-                               , 1
-                               , seed
-                               , 1
-                               , &beta
-                               , matrixGrad
-                               , opConfig.target1Cols); 
-                    cublasSgemm( *cublasH
-                               , CUBLAS_OP_N
-                               , CUBLAS_OP_T
-                               , 1
-                               , opConfig.target1Cols
-                               , opConfig.target1Rows
-                               , &alpha
-                               , seed
-                               , 1
-                               , matrixValue
-                               , opConfig.target1Cols
-                               , &beta
-                               , colGrad
-                               , 1);
-                    computeGrad(opConfig.target1, matrixGrad);
-                    computeGrad(opConfig.target2, colGrad);
-                } break;
-                case OperationType::Scalar: {
-                    ScalarConfig opConfig = get<ScalarConfig>(op.config);
-                    float *grad = memLocs[op.name+"_grad"];
-                    float *result = memLocs[op.name+"_result"];
+                cublasErrCk( cublasScopy(*cublasH, op.cols * op.rows, seed, 1, grad, 1) );
+                cublasErrCk( cublasSscal(*cublasH, op.cols * op.rows, &(opConfig.scale), grad, 1) );
+                cudaErrCk( cudaDeviceSynchronize() );
+                computeGrad(opConfig.target, grad);
 
-                    cublasScopy(*cublasH, op.cols * op.rows, seed, 1, grad, 1);
-                    cublasSscal(*cublasH, op.cols * op.rows, &(opConfig.scale), grad, 1);
-                    computeGrad(opConfig.target, grad);
+            } break;
+            case OperationType::Add: {
+                BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
+                float* copySeed = memLocs[op.name+"_grad"];
 
-                } break;
-                case OperationType::Add: {
-                    BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
-                    float* copySeed = memLocs[op.name+"_grad"];
+                cudaMemcpy(copySeed, seed, op.rows * op.cols * sizeof(float), cudaMemcpyDeviceToDevice);
+                computeGrad(opConfig.target1, seed);
+                computeGrad(opConfig.target2, copySeed);
+            } break;
+            case OperationType::LeakyReLU: {
+                BasicConfig opConfig = get<BasicConfig>(op.config);
+                float* newSeed = memLocs[op.name+"_working"];
 
-                    cudaMemcpy(copySeed, seed, op.rows * op.cols * sizeof(float), cudaMemcpyDeviceToDevice);
-                    computeGrad(opConfig.target1, seed);
-                    computeGrad(opConfig.target2, copySeed);
-                } break;
-                case OperationType::LeakyReLU: {
-                    BasicConfig opConfig = get<BasicConfig>(op.config);
-                    float* newSeed = memLocs[op.name+"_working"];
-                    float* grad = memLocs[op.name+"_grad"];
+                dim3 bd(32, 32, 1);
+                dim3 gd(ceil(op.cols / 32.0), ceil(op.cols / 32.0), 1);
 
-                    dim3 bd(32, 32, 1);
-                    dim3 gd(ceil(op.cols / 32.0), ceil(op.cols / 32.0), 1);
+                doComponentProduct<<<gd, bd>>>(op.rows, op.cols, grad, seed, newSeed);
+                cudaErrCk( cudaDeviceSynchronize() );
 
-                    doComponentProduct<<<gd, bd>>>(op.rows, op.cols, grad, seed, newSeed);
+                computeGrad(opConfig.target, newSeed);
 
-                    computeGrad(opConfig.target, newSeed);
+            } break;
 
-                } break;
-
-            }
         }
     }
 
@@ -435,23 +477,21 @@ namespace DA {
                     float* d_matrix2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
 
-                    if(CUBLAS_STATUS_SUCCESS != cublasSgemm( *cublasH
+                    cublasErrCk( cublasSgemm( *cublasH
                                , CUBLAS_OP_N
                                , CUBLAS_OP_N
-                               , opConfig.target1Rows
                                , opConfig.target2Cols
+                               , opConfig.target1Rows
                                , opConfig.target1Cols
                                , &alpha
-                               , d_matrix1
-                               , opConfig.target1Rows
                                , d_matrix2
+                               , opConfig.target2Cols
+                               , d_matrix1
                                , opConfig.target1Cols
                                , &beta
                                , d_result
-                               , op.rows)) {
-                        cout << "failing due to error" << endl;
-                        exit(-1);
-                    }
+                               , opConfig.target2Cols) ) 
+                    cudaErrCk( cudaDeviceSynchronize() );
 
                 break;}
 
@@ -468,14 +508,11 @@ namespace DA {
                     dim3 bd(32, 32, 1);
                     dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
 
-                    cudaError_t err;
+                    cudaErrCk( cudaDeviceSynchronize() );
+
                     doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result);
-                    err = cudaGetLastError();
-                    if (err != cudaSuccess) {
-                        printf("Kernel launch error in ColLeakyReLU::compute: %s\n",
-                            cudaGetErrorString(err));
-                        exit(1);
-                    }
+                    cudaErrCk( cudaPeekAtLastError() );
+                    cudaErrCk( cudaDeviceSynchronize() );
 
 
                 break;}
@@ -486,25 +523,29 @@ namespace DA {
                     float* d_result = memLocs[op.name+"_result"];
                     float alpha = 1.0;
                     
-                    cublasScopy(*cublasH, op.rows * op.cols, d_v1, 1, d_result, 1);
-                    cublasSaxpy(*cublasH, op.rows * op.cols, &alpha, d_v2, 1, d_result, 1);
+                    cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols, d_v1, 1, d_result, 1) );
+                    cublasErrCk( cublasSaxpy(*cublasH, op.rows * op.cols, &alpha, d_v2, 1, d_result, 1) );
+                    cudaErrCk( cudaDeviceSynchronize() );
                 break;}
                 case OperationType::Scalar:{
                     ScalarConfig opConfig = get<ScalarConfig>(op.config);
                     float* d_target = memLocs[opConfig.target+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
-                    cublasScopy(*cublasH, op.rows * op.cols, d_target, 1, d_result, 1);
-                    cublasSscal(*cublasH, op.rows * op.cols, &(opConfig.scale), d_result, 1);
+                    cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols, d_target, 1, d_result, 1) );
+                    cublasErrCk( cublasSscal(*cublasH, op.rows * op.cols, &(opConfig.scale), d_result, 1) );
+                    cudaErrCk( cudaDeviceSynchronize() );
                 break;}
                 case OperationType::InnerProduct:{
                     BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
                     float* d_v1 = memLocs[opConfig.target1+"_result"];
                     float* d_v2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
-                    cublasSdot(*cublasH, opConfig.targetRows, d_v1, 1, d_v2, 1, d_result);
+                    cublasErrCk( cublasSdot(*cublasH, opConfig.targetRows, d_v1, 1, d_v2, 1, d_result) );
+                    cudaErrCk( cudaDeviceSynchronize() );
 
                 break;}
             }
+            cudaErrCk( cudaDeviceSynchronize() );
         }
 
     }

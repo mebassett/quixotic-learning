@@ -65,6 +65,10 @@ struct Operation {
 
 struct Function {
     vector<Operation> ops;
+    uint gradSize;
+    uint resultSize;
+    uint workingSize;
+    uint totalSize;
     map<string, float*> memLocs;
     float* d_value;
     cublasHandle_t* cublasH;
