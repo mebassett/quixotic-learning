@@ -77,8 +77,10 @@ class DaftMatrixColProductTest : public testing::Test {
 protected:
     cublasHandle_t cublasH;
     Function *f;
+    Function *g;
     float *result;
     float *matrixGrad;
+    float *result2;
     void SetUp() override {
         cublasCreate(&cublasH);
         f = new Function(&cublasH);
@@ -89,12 +91,22 @@ protected:
 
         result = new float[2];
         matrixGrad = new float[4];
+
+        g = new Function(&cublasH);
+        g->addOp(Operation::matrix("A", 2, 2));
+        g->addOp(Operation::matrix("B", 2, 2));
+        g->addOp(Operation::matrixProduct("g", "A", "B", 2, 2, 2));
+        g-> compile();
+        result2 = new float[4];
+
     }
     void TearDown() override {
         cublasDestroy(cublasH);
         delete [] result;
+        delete [] result2;
         delete [] matrixGrad;
         delete f;
+        delete g;
     }
 };
 
@@ -111,6 +123,16 @@ TEST_F(DaftMatrixColProductTest, DaftMatrixColProductCompute) {
     EXPECT_EQ(matrixGrad[1], 2) << "abcd grad";
     EXPECT_EQ(matrixGrad[2], 1) << "abcd grad";
     EXPECT_EQ(matrixGrad[3], 2) << "abcd grad";
+
+    g->setValue("A", {1,2,3,4});
+    g->setValue("B", {1,1,-1,1});
+    g->compute();
+    g->getValue("g", result2);
+    EXPECT_EQ(result2[0],-1) << "AB00";
+    EXPECT_EQ(result2[1],3) << "AB01";
+    EXPECT_EQ(result2[2],-1) << "AB10";
+    EXPECT_EQ(result2[3],7) << "AB11";
+
 
 
 }
