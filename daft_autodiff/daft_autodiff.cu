@@ -62,6 +62,9 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             case OperationType::InnerProduct:
                 o << "InnerProduct";
                 break;
+            case OperationType::Convolution:
+                o << "Convolution";
+                break;
 
         }
         return o;
@@ -102,6 +105,83 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         if (row < rows && col < cols) {
             result[row * cols + col] = seed[row * cols + col] * grad[row * cols + col];
         }
+    }
+
+    __global__ void doPadInput(float* input, float* paddedInput, int inputRows,
+        int inputCols, int rowPadding, int colPadding)
+    {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int col = blockIdx.x * blockDim.x + threadIdx.x;
+        int rows = inputRows + 2 * rowPadding;
+        int cols = inputCols + 2 * colPadding;
+    
+        if (row < rows && col < cols) {
+            if (row - rowPadding >= 0 && row < inputRows + rowPadding && col - colPadding >= 0 && col < inputCols + colPadding)
+                paddedInput[row * cols + col] = input[(row - rowPadding) * inputCols + col - colPadding];
+            else
+                paddedInput[row * cols + col] = 0;
+        }
+    }
+
+    __global__ void doUnroll(float* kernel, float* matrix, int kernelRows,
+        int kernelCols, int mRows, int mCols, int inCols,
+        int outCols, int rowSkip, int colSkip)
+    {
+        int mrow = blockIdx.y * blockDim.y + threadIdx.y;
+        int mcol = blockIdx.x * blockDim.x + threadIdx.x;
+        if (mrow < mRows && mcol < mCols) {
+            int outRow = mrow / outCols;
+            int outCol = mrow % outCols;
+    
+            int inRow = mcol / inCols;
+            int inCol = mcol % inCols;
+    
+            int kRowIndex = inRow - rowSkip * outRow;
+            int kColIndex = inCol - colSkip * outCol;
+    
+            if (kRowIndex >= 0 && kRowIndex < kernelRows && kColIndex >= 0 && kColIndex < kernelCols) {
+                matrix[mrow * mCols + mcol] = kernel[kRowIndex * kernelCols + kColIndex];
+            } else {
+                matrix[mrow * mCols + mcol] = 0;
+            }
+        }
+    }
+
+    void convolutionPadInput( uint inputRows, uint inputCols
+                            , uint rowPadding, uint colPadding
+                            , float* input, float* output) {
+        uint outputRows = inputRows + rowPadding*2;
+        uint outputCols = inputCols + colPadding*2;
+        dim3 gd(ceil(outputCols / 32.0), ceil(outputRows / 32.0), 1);
+        dim3 bd(32, 32, 1);
+        doPadInput<<<gd, bd>>>(input, output, inputRows
+                    , inputCols, rowPadding, colPadding);
+        cudaErrCk( cudaPeekAtLastError() );
+        cudaDeviceSynchronize(); //do you actually need this? 
+    }
+
+    void convolutionUnrollKernel( uint unrKrnlRows, uint unrKrnlCols
+                                , uint kernelRows, uint kernelCols
+                                , uint paddedInputCols
+                                , uint outputCols
+                                , uint rowSkip
+                                , uint colSkip
+                                , float* kernel
+                                , float* output ) {
+        dim3 gd(ceil(unrKrnlCols / 32.0), ceil(unrKrnlRows / 32.0), 1);
+        dim3 bd(32, 32, 1);
+        doUnroll<<<gd, bd>>>( kernel
+                            , output
+                            , kernelRows
+                            , kernelCols
+                            , unrKrnlRows
+                            , unrKrnlCols
+                            , paddedInputCols
+                            , outputCols
+                            , rowSkip
+                            , colSkip );
+        cudaErrCk( cudaPeekAtLastError() );
+        cudaDeviceSynchronize(); //do you actually need this? 
     }
 
     Operation Operation::column(string name, uint rows) {
@@ -196,6 +276,50 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                , .noOp = false
                , .config{ (ScalarConfig) { .target{target}, .scale=scale }}
         };
+    }
+    
+    Operation Operation::convolution(string name, string multiplicand, string kernel, uint rowPadding,
+            uint rowSkip, uint colPadding, uint colSkip, 
+            uint multiplicandRows, uint multiplicandCols,
+            uint kernelRows, uint kernelCols) {
+        int rows = (multiplicandRows + 2 * rowPadding - kernelRows) / rowSkip + 1;
+        int cols = (multiplicandCols + 2 * colPadding - kernelCols) / colSkip + 1;
+
+        int unrKrnlCols = (multiplicandRows + rowPadding*2) * (multiplicandCols + colPadding*2);
+        int unrKrnlRows = rows * cols; 
+
+        // working size ihe padding input plus the unrolled kernel.
+        int paddedInputSize = 
+          (multiplicandRows + 2 * rowPadding) * (multiplicandCols + 2 * colPadding);
+
+        // grad size will be the size of the kernel plus the size 
+        // of the multiplicand
+        int gradSize = (kernelRows * kernelCols) + (multiplicandRows * multiplicandCols);
+        
+        return { .opType=OperationType::Convolution
+               , .workingSize = paddedInputSize + (unrKrnlRows * unrKrnlCols)
+               , .resultSize = rows * cols
+               , .gradSize = gradSize
+               , .rows = rows
+               , .cols = cols
+               , .name{name}
+               , .noOp = false
+               , .config{ (ConvolutionConfig) {
+                   .multiplicand{multiplicand}
+                 , .kernel{kernel}
+                 , .rowPadding = rowPadding
+                 , .rowSkip = rowSkip
+                 , .colPadding = colPadding
+                 , .colSkip = colSkip
+                 , .multiplicandRows = multiplicandRows
+                 , .multiplicandCols = multiplicandCols
+                 , .kernelRows = kernelRows
+                 , .kernelCols = kernelCols
+                 , .unrKrnlRows = unrKrnlRows
+                 , .unrKrnlCols = unrKrnlCols
+                 , .paddedInputSize = paddedInputSize
+                 }}
+               };
     }
 
     Function::Function(cublasHandle_t* cublasH) : ops(), memLocs(), cublasH(cublasH) {
@@ -528,9 +652,55 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     cublasErrCk( cublasSdot(*cublasH, opConfig.targetRows, d_v1, 1, d_v2, 1, d_result) );
 
                 break;}
+                case OperationType::Convolution:{
+                    // pad the input, which means a copy to wocrking, which is slow
+                    ConvolutionConfig opCnfg = get<ConvolutionConfig>(op.config);
+                    float* input = memLocs[opCnfg.multiplicand+"_result"];
+                    float* paddedInput = memLocs[op.name+"_working"];
+                    convolutionPadInput( opCnfg.multiplicandRows
+                                       , opCnfg.multiplicandCols
+                                       , opCnfg.rowPadding
+                                       , opCnfg.colPadding
+                                       , input
+                                       , paddedInput);
+
+                    // unroll the kernel..another slow copy to working.
+                    float* kernel = memLocs[opCnfg.kernel+"_result"];
+                    float* unrolledKernel = memLocs[op.name+"_working"] + opCnfg.paddedInputSize;
+                    convolutionUnrollKernel( opCnfg.unrKrnlRows
+                            , opCnfg.unrKrnlCols
+                            , opCnfg.kernelRows
+                            , opCnfg.kernelCols
+                            , opCnfg.multiplicandCols + 2 * opCnfg.colPadding
+                            , op.cols
+                            , opCnfg.rowSkip
+                            , opCnfg.colSkip
+                            , kernel
+                            , unrolledKernel);
+
+                    // do a matrix multiplication, storing it in the result
+                    float alpha = 1;
+                    float beta = 0;
+                    float* output = memLocs[op.name+"_result"];
+
+                    cublasErrCk( cublasSgemv( *cublasH
+                                , CUBLAS_OP_T
+                                , opCnfg.unrKrnlCols
+                                , opCnfg.unrKrnlRows
+                                , &alpha
+                                , unrolledKernel
+                                , opCnfg.unrKrnlCols
+                                , paddedInput
+                                , 1
+                                , &beta
+                                , output
+                                , 1 ) );
+
+                break;}
             }
         }
 
     }
+
 
 } // namespace DA

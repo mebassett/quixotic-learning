@@ -253,3 +253,93 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
     }
 
 }
+
+class DaftConvolutionTestNoPaddingSingleOffset : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* result;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add input matrix (3x3) and kernel (2x2)
+        f->addOp(Operation::matrix("input", 3, 3));
+        f->addOp(Operation::matrix("kernel", 2, 2));
+        
+        // Add convolution operation with no padding (0,0) and single offset (1,1)
+        f->addOp(Operation::convolution("conv", "input", "kernel", 
+                                      0, 1, 0, 1,  // rowPadding, rowSkip, colPadding, colSkip
+                                      3, 3,        // multiplicandRows, multiplicandCols
+                                      2, 2));      // kernelRows, kernelCols
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("input", {1, 2, 3, 4, 5, 6, 7, 8, 9});
+        f->setValue("kernel", {3, 3, 3, 3});
+
+        f->compute();
+        
+        result = new float[4];  // 2x2 output
+        f->getValue("conv", result);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] result;
+        delete f;
+    }
+};
+
+TEST_F(DaftConvolutionTestNoPaddingSingleOffset, ConvolutionTestCompute) {
+    float values[4] = {36, 48, 72, 84};
+    for (int i = 0; i < 4; i++)
+        EXPECT_EQ(result[i], values[i])
+            << "Daft Convolution compute, no padding single offset.";
+}
+
+class DaftConvolutionTestPaddedWithStride : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* result;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add input matrix (4x4) and kernel (3x3)
+        f->addOp(Operation::matrix("input", 4, 4));
+        f->addOp(Operation::matrix("kernel", 3, 3));
+        
+        // Add convolution operation with padding (1,1) and stride (3,3)
+        f->addOp(Operation::convolution("conv", "input", "kernel", 
+                                      1, 3, 1, 3,  // rowPadding, rowSkip, colPadding, colSkip
+                                      4, 4,        // multiplicandRows, multiplicandCols
+                                      3, 3));      // kernelRows, kernelCols
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("input", {1, 2, 3, 4, 5, 6, 7, 8, 9, 1, 2, 3, 4, 5, 6, 7});
+        f->setValue("kernel", {1, 0, 0, 0, 1, 0, 0, 0, 1}); 
+
+        f->compute();
+        
+        result = new float[4];  // 2x2 output
+        f->getValue("conv", result);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] result;
+        delete f;
+    }
+};
+
+TEST_F(DaftConvolutionTestPaddedWithStride, ConvolutionTestCompute) {
+    float values[4] = {7, 4, 4, 9};
+    for (int i = 0; i < 4; i++)
+        EXPECT_EQ(result[i], values[i])
+            << "Daft Convolution compute, 1 padding, 3 stride.";
+}

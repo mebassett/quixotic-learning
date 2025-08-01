@@ -12,7 +12,16 @@ using namespace std;
 
 namespace DA {
 
-enum class OperationType { InputColumn, InputMatrix, MatrixProduct, LeakyReLU, Add, Scalar, InnerProduct};
+enum class OperationType 
+    { InputColumn
+    , InputMatrix
+    , MatrixProduct
+    , LeakyReLU
+    , Add
+    , Scalar
+    , InnerProduct
+    , Convolution
+    };
 
 ostream& operator<<(ostream &o, const OperationType t) ;
 
@@ -35,12 +44,28 @@ struct BinaryMatrixConfig {
     const uint target2Cols;
 };
 
+struct ConvolutionConfig {
+    string multiplicand;
+    string kernel;
+    const uint rowPadding;
+    const uint rowSkip;
+    const uint colPadding;
+    const uint colSkip;
+    const uint multiplicandRows;
+    const uint multiplicandCols;
+    const uint kernelRows;
+    const uint kernelCols;
+    const uint unrKrnlRows;
+    const uint unrKrnlCols;
+    const uint paddedInputSize;
+};
+
 struct ScalarConfig {
     string target;
     float scale;
 };
 
-using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig>;
+using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig, ConvolutionConfig>;
 
 struct Operation {
     const OperationType opType;
@@ -60,6 +85,10 @@ struct Operation {
     static Operation innerProduct(string name, string target1, string target2, uint rows);
     static Operation add(string name, string target1, string target2, uint rows, uint cols);
     static Operation scalarMultiply(string name, string target, uint rows, uint cols, float scale);
+    static Operation convolution(string name, string multiplicand, string kernel, uint rowPadding,
+            uint rowSkip, uint colPadding, uint colSkip, 
+            uint multiplicandRows, uint multiplicandCols,
+            uint kernelRows, uint kernelCols);
 };
 
 
