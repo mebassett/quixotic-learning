@@ -516,3 +516,41 @@ TEST_F(DaftConvolutionDoubleGradTest, ConvolutionDoubleGradTestCompute) {
             << "Daft Convolution*Convolution kernel grad";
     }
 }
+
+class DaftMaxPoolComputeTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* result;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add 2x2 input matrix
+        f->addOp(Operation::matrix("id3", 2, 2));
+        
+        // Add MaxPool operation with 2x2 pool size and stride 1
+        f->addOp(Operation::maxPool("mp", "id3", 2, 2, 1, 1, 2, 2));
+        
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("id3", {1, 2, 3, 4});
+
+        f->compute();
+        
+        result = new float[1];  // 1x1 output
+        f->getValue("mp", result);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] result;
+        delete f;
+    }
+};
+
+TEST_F(DaftMaxPoolComputeTest, MaxPoolComputeTest) {
+    EXPECT_EQ(result[0], 4) << "Daft MaxPool compute";
+}
