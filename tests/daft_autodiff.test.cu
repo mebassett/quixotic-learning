@@ -343,3 +343,176 @@ TEST_F(DaftConvolutionTestPaddedWithStride, ConvolutionTestCompute) {
         EXPECT_EQ(result[i], values[i])
             << "Daft Convolution compute, 1 padding, 3 stride.";
 }
+
+class DaftConvolutionGradTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* kernelGrad;
+    float* inputGrad;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add input matrix (2x2) and kernel (2x2)
+        f->addOp(Operation::matrix("input", 2, 2));
+        f->addOp(Operation::matrix("kernel", 2, 2));
+        
+        // Add convolution operation with no padding (0,0) and single offset (1,1)
+        f->addOp(Operation::convolution("conv", "input", "kernel", 
+                                      0, 1, 0, 1,  // rowPadding, rowSkip, colPadding, colSkip
+                                      2, 2,        // multiplicandRows, multiplicandCols
+                                      2, 2));      // kernelRows, kernelCols
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("input", {1, 2, 3, 4});
+        f->setValue("kernel", {3, 3, 3, 3});
+
+        f->compute();
+        f->computeGrad("conv");
+        
+        kernelGrad = new float[4];
+        inputGrad = new float[4];
+        f->getGrad("kernel", kernelGrad);
+        f->getGrad("input", inputGrad);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] kernelGrad;
+        delete[] inputGrad;
+        delete f;
+    }
+};
+
+TEST_F(DaftConvolutionGradTest, ConvolutionGradTestCompute) {
+    float kernelGradValues[4] = {1, 2, 3, 4};
+    float inputGradValues[4] = {3, 3, 3, 3};
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(kernelGrad[i], kernelGradValues[i]) << "Daft Convolution kernel grad";
+        EXPECT_EQ(inputGrad[i], inputGradValues[i]) << "Daft Convolution input grad";
+    }
+}
+
+class DaftConvolutionGradInnerProductTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* kernelGrad;
+    float* result;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add 3x3 identity matrix, 2x2 kernel, and 2-element vector
+        f->addOp(Operation::matrix("id3", 3, 3));
+        f->addOp(Operation::matrix("k2", 2, 2));
+        f->addOp(Operation::column("v", 2));
+        
+        // Add convolution (3x3 -> 2x2 output)
+        f->addOp(Operation::convolution("c2", "id3", "k2", 
+                                      0, 1, 0, 1,  // no padding, stride 1
+                                      3, 3,        // input 3x3
+                                      2, 2));      // kernel 2x2
+        
+        // Add matrix-column product (2x2 output becomes 2x1)
+        f->addOp(Operation::matrixProduct("p", "c2", "v", 2, 2, 1));
+        
+        // Add inner product (2x1 with itself -> scalar)
+        f->addOp(Operation::innerProduct("f1", "p", "p", 2));
+        
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("id3", {1, 0, 0, 0, 1, 0, 0, 0, 1});  // 3x3 identity
+        f->setValue("k2", {0, 1, 1, 0});                   // 2x2 kernel
+        f->setValue("v", {1, 1});                          // 2-element vector
+
+        f->compute();
+        f->computeGrad("f1");
+        
+        kernelGrad = new float[4];
+        result = new float[1];
+        f->getGrad("k2", kernelGrad);
+        f->getValue("f1", result);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] kernelGrad;
+        delete[] result;
+        delete f;
+    }
+};
+
+TEST_F(DaftConvolutionGradInnerProductTest, ConvolutionGradInnerProductTestCompute) {
+    EXPECT_EQ(result[0], 2) << "Daft Convolution*InnerProduct value";
+    float kernelGradValues[4] = {4, 2, 2, 4};
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(kernelGrad[i], kernelGradValues[i])
+            << "Daft Convolution*InnerProduct kernel grad";
+    }
+}
+
+class DaftConvolutionDoubleGradTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* kernelGrad;
+    float* result;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add 2x2 input matrix and two 2x2 kernels
+        f->addOp(Operation::matrix("id3", 2, 2));
+        f->addOp(Operation::matrix("k2", 2, 2));
+        f->addOp(Operation::matrix("k3", 2, 2));
+        
+        // First convolution with padding and stride 2
+        f->addOp(Operation::convolution("c2", "id3", "k2", 
+                                      1, 2, 1, 2,  // padding 1, stride 2
+                                      2, 2,        // input 2x2
+                                      2, 2));      // kernel 2x2
+        
+        // Second convolution with no padding, stride 1
+        f->addOp(Operation::convolution("f2", "c2", "k3", 
+                                      0, 1, 0, 1,  // no padding, stride 1
+                                      2, 2,        // c2 output is 2x2
+                                      2, 2));      // kernel 2x2
+        
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("id3", {0, 1, -1, 0});
+        f->setValue("k2", {5, 6, 9, 3});
+        f->setValue("k3", {1, 1, 1, 1});
+
+        f->compute();
+        f->computeGrad("f2");
+        
+        kernelGrad = new float[4];
+        result = new float[1];
+        f->getGrad("k2", kernelGrad);
+        f->getValue("f2", result);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] kernelGrad;
+        delete[] result;
+        delete f;
+    }
+};
+
+TEST_F(DaftConvolutionDoubleGradTest, ConvolutionDoubleGradTestCompute) {
+    float kernelGradValues[4] = {0, -1, 1, 0};
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(kernelGrad[i], kernelGradValues[i])
+            << "Daft Convolution*Convolution kernel grad";
+    }
+}
