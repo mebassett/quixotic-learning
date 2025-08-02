@@ -21,6 +21,7 @@ enum class OperationType
     , Scalar
     , InnerProduct
     , Convolution
+    , MaxPool
     };
 
 ostream& operator<<(ostream &o, const OperationType t) ;
@@ -65,7 +66,17 @@ struct ScalarConfig {
     float scale;
 };
 
-using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig, ConvolutionConfig>;
+struct MaxPoolConfig {
+    string target;
+    const uint width;
+    const uint height;
+    const uint rowSkip;
+    const uint colSkip;
+    const uint targetRows;
+    const uint targetCols;
+};
+
+using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig, ConvolutionConfig, MaxPoolConfig>;
 
 struct Operation {
     const OperationType opType;
@@ -89,6 +100,8 @@ struct Operation {
             uint rowSkip, uint colPadding, uint colSkip, 
             uint multiplicandRows, uint multiplicandCols,
             uint kernelRows, uint kernelCols);
+    static Operation maxPool(string name, string target, uint width, uint height, 
+            uint rowSkip, uint colSkip, uint targetRows, uint targetCols);
 };
 
 

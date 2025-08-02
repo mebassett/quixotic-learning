@@ -65,6 +65,9 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             case OperationType::Convolution:
                 o << "Convolution";
                 break;
+            case OperationType::MaxPool:
+                o << "MaxPool";
+                break;
 
         }
         return o;
@@ -177,6 +180,52 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         int col = blockIdx.x * blockDim.x + threadIdx.x;
         if (row < rows && col < cols) {
             dest[row * cols + col] = paddedSource[(row + rowPadding) * (cols + 2 * colPadding) + col + colPadding];
+        }
+    }
+
+    __global__ void doMaxPool(int targetRows, int targetCols, int matrixRows,
+        int matrixCols, int rowSkip, int height, int colSkip,
+        int width, float* matrix, float* result)
+    {
+        int trow = blockIdx.y * blockDim.y + threadIdx.y;
+        int tcol = blockIdx.x * blockDim.x + threadIdx.x;
+        if (trow < targetRows && tcol < targetCols) {
+            float val = -9999;
+            int mrow = rowSkip * trow;
+            int mcol = colSkip * tcol;
+
+            for (int i = mrow; i < mrow + height; i++)
+                for (int j = mcol; j < mcol + width; j++)
+                    if (i >= 0 && j >= 0 && i < matrixRows && j < matrixCols) {
+                        int mIndex = matrixCols * i + j;
+                        if (matrix[mIndex] > val)
+                            val = matrix[mIndex];
+                    }
+
+            result[targetCols * trow + tcol] = val;
+        }
+    }
+
+    __global__ void doMaxPoolGrad(int targetRows, int targetCols, int matrixRows,
+        int matrixCols, int rowSkip, int height,
+        int colSkip, int width, float* matrix,
+        float* value, float* seed, float* result)
+    {
+        int trow = blockIdx.y * blockDim.y + threadIdx.y;
+        int tcol = blockIdx.x * blockDim.x + threadIdx.x;
+        int tIndex = targetCols * trow + tcol;
+        if (trow < targetRows && tcol < targetCols) {
+            int mrow = rowSkip * trow;
+            int mcol = colSkip * tcol;
+
+            float val = seed[tIndex];
+
+            for (int i = mrow; i < mrow + height; i++)
+                for (int j = mcol; j < mcol + width; j++)
+                    if (i >= 0 && j >= 0 && i < matrixRows && j < matrixCols) {
+                        int mIndex = matrixCols * i + j;
+                        result[mIndex] = val * (matrix[mIndex] == value[tIndex]);
+                    }
         }
     }
 
@@ -360,6 +409,31 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                  , .unrKrnlRows = unrKrnlRows
                  , .unrKrnlCols = unrKrnlCols
                  , .paddedInputSize = paddedInputSize
+                 }}
+               };
+    }
+
+    Operation Operation::maxPool(string name, string target, uint width, uint height, 
+            uint rowSkip, uint colSkip, uint targetRows, uint targetCols) {
+        uint rows = (targetRows - height) / rowSkip + 1;
+        uint cols = (targetCols - width) / colSkip + 1;
+        
+        return { .opType=OperationType::MaxPool
+               , .workingSize = 0
+               , .resultSize = rows * cols
+               , .gradSize = targetRows * targetCols
+               , .rows = rows
+               , .cols = cols
+               , .name{name}
+               , .noOp = false
+               , .config{ (MaxPoolConfig) {
+                   .target{target}
+                 , .width = width
+                 , .height = height
+                 , .rowSkip = rowSkip
+                 , .colSkip = colSkip
+                 , .targetRows = targetRows
+                 , .targetCols = targetCols
                  }}
                };
     }
@@ -691,6 +765,21 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 cudaErrCk( cudaPeekAtLastError() );
                 computeGrad(opCnfg.multiplicand, inputGrad);
             }break;
+            case OperationType::MaxPool: {
+                MaxPoolConfig opConfig = get<MaxPoolConfig>(op.config);
+                float* targetValue = memLocs[opConfig.target+"_result"];
+                float* result = memLocs[op.name+"_result"];
+                float* grad = memLocs[op.name+"_grad"];
+
+                dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
+                dim3 bd(32, 32, 1);
+                doMaxPoolGrad<<<gd, bd>>>(op.rows, op.cols, opConfig.targetRows, opConfig.targetCols, 
+                    opConfig.rowSkip, opConfig.height, opConfig.colSkip, opConfig.width, 
+                    targetValue, result, seed, grad);
+                cudaErrCk( cudaPeekAtLastError() );
+
+                computeGrad(opConfig.target, grad);
+            }break;
 
         }
     }
@@ -817,6 +906,19 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                                 , &beta
                                 , output
                                 , 1 ) );
+
+                break;}
+                case OperationType::MaxPool: {
+                    MaxPoolConfig opConfig = get<MaxPoolConfig>(op.config);
+                    float* d_target = memLocs[opConfig.target+"_result"];
+                    float* d_result = memLocs[op.name+"_result"];
+
+                    dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
+                    dim3 bd(32, 32, 1);
+                    doMaxPool<<<gd, bd>>>(op.rows, op.cols, opConfig.targetRows, opConfig.targetCols,
+                        opConfig.rowSkip, opConfig.height, opConfig.colSkip, opConfig.width,
+                        d_target, d_result);
+                    cudaErrCk( cudaPeekAtLastError() );
 
                 break;}
             }
