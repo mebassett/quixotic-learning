@@ -554,3 +554,90 @@ protected:
 TEST_F(DaftMaxPoolComputeTest, MaxPoolComputeTest) {
     EXPECT_EQ(result[0], 4) << "Daft MaxPool compute";
 }
+
+class DaftMaxPoolLargeTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* result;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add 4x4 input matrix
+        f->addOp(Operation::matrix("id3", 4, 4));
+        
+        // Add MaxPool operation with 2x2 pool size and stride 2
+        f->addOp(Operation::maxPool("mp", "id3", 2, 2, 2, 2, 4, 4));
+        
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("id3", {1, 2, 1, 2, 3, 9, 16, 3, 1, 10, 4, 1, 3, 4, 2, 3});
+
+        f->compute();
+        
+        result = new float[4];  // 2x2 output
+        f->getValue("mp", result);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] result;
+        delete f;
+    }
+};
+
+TEST_F(DaftMaxPoolLargeTest, MaxPoolLargeTest) {
+    float values[4] = {9, 16, 10, 4};
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(result[i], values[i]) << "Daft MaxPool large test";
+    }
+}
+
+class DaftMaxPoolGradTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    float* testvalue;
+    float scalarValue = 5;
+
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+        
+        // Add 2x2 input matrix
+        f->addOp(Operation::matrix("id3", 2, 2));
+        
+        // Add MaxPool operation with 2x2 pool size and stride 1
+        f->addOp(Operation::maxPool("mp", "id3", 2, 2, 1, 1, 2, 2));
+        
+        // Add scalar multiplication
+        f->addOp(Operation::scalarMultiply("smp", "mp", 1, 1, scalarValue));
+        
+        f->compile();
+
+        // Set up values - same as silly test
+        f->setValue("id3", {1, 1, 1, 4});
+
+        f->compute();
+        f->computeGrad("smp");
+        
+        testvalue = new float[4];
+        f->getGrad("id3", testvalue);
+    }
+    
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete[] testvalue;
+        delete f;
+    }
+};
+
+TEST_F(DaftMaxPoolGradTest, MaxPoolGradTest) {
+    float values[4] = {0, 0, 0, scalarValue};
+    for (int i = 0; i < 4; i++) {
+        EXPECT_EQ(testvalue[i], values[i]) << "Daft MaxPool grad test";
+    }
+}
