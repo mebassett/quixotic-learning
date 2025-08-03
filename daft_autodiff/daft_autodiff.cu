@@ -68,6 +68,9 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             case OperationType::MaxPool:
                 o << "MaxPool";
                 break;
+            case OperationType::Concat:
+                o << "Concat";
+                break;
 
         }
         return o;
@@ -436,6 +439,26 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                  , .targetCols = targetCols
                  }}
                };
+    }
+
+    // CAUTION - this does a copy within device memory.
+    // you can probably avoid this entirely by ensuring that all your results
+    // end up in one continuous block and then lying about the size of the 
+    // first target as an input into something else.
+    Operation Operation::concat(string name, const vector<string>& targets, uint size) {
+        return { .opType=OperationType::Concat
+               , .workingSize = 0
+               , .resultSize = size
+               , .gradSize = 0
+               , .rows = size
+               , .cols = 1
+               , .name{name}
+               , .noOp = false
+               , .config { (ConcatConfig) {
+                     .targets{targets}
+                   , .size=size
+               }}
+        };
     }
 
     Function::Function(cublasHandle_t* cublasH) : ops(), memLocs(), cublasH(cublasH) {

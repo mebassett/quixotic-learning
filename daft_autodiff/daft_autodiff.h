@@ -22,12 +22,18 @@ enum class OperationType
     , InnerProduct
     , Convolution
     , MaxPool
+    , Concat
     };
 
 ostream& operator<<(ostream &o, const OperationType t) ;
 
 struct BasicConfig {
     string target;
+};
+
+struct ConcatConfig {
+    vector<string> targets;
+    const uint size;
 };
 
 struct BinaryOpConfig {
@@ -76,7 +82,7 @@ struct MaxPoolConfig {
     const uint targetCols;
 };
 
-using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig, ConvolutionConfig, MaxPoolConfig>;
+using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig, ConvolutionConfig, MaxPoolConfig, ConcatConfig>;
 
 struct Operation {
     const OperationType opType;
@@ -102,6 +108,7 @@ struct Operation {
             uint kernelRows, uint kernelCols);
     static Operation maxPool(string name, string target, uint width, uint height, 
             uint rowSkip, uint colSkip, uint targetRows, uint targetCols);
+    static Operation concat(string name, const vector<string>& targets, uint size);
 };
 
 
