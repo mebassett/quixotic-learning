@@ -23,7 +23,9 @@ target_link_libraries(daft-ffnn PUBLIC cublas daft_autodiff mnistdata)
 
 
 add_executable(lenet examples/lenet/lenet.cu)
+add_executable(daft-lenet examples/lenet/daft-lenet.cu)
 target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/silly_autodiff)
+target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/daft_autodiff)
 target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/mnist)
 target_link_libraries(lenet PUBLIC cublas silly_autodiff mnistdata)
 
