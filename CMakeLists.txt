@@ -28,6 +28,7 @@ target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/silly_autodiff)
 target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/daft_autodiff)
 target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/mnist)
 target_link_libraries(lenet PUBLIC cublas silly_autodiff mnistdata)
+target_link_libraries(daft-lenet PUBLIC cublas daft_autodiff mnistdata)
 
 include(FetchContent)
 FetchContent_Declare(
