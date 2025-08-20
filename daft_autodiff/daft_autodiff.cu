@@ -974,5 +974,63 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
     }
 
+    void Function::batchCompute(vector<float>* result, string target, const map<string, vector<vector<float>>>& inputs) {
+        const auto targetOp = find_if(ops.begin(), ops.end(), [target](auto needle) { return needle.name == target;});
+        if(targetOp == ops.end()) {
+          cout << "batchCompute cannot find op " << target << endl;
+          exit(1);
+          return;
+        }
+
+        map<string, int> sizes ;
+        map<string, int> indices ;
+        map<string, float*> inputLocs;
+        float* d_inputs;
+        int batchSize = 0;
+        int totalSize = 0;
+        for( auto const& [varName, data] : inputs) {
+            batchSize = data.size();
+            sizes.insert({varName, data[0].size()});
+            indices.insert({varName, 0});
+            totalSize += data.size() * data[0].size();
+        }
+        totalSize += targetOp->resultSize * batchSize;
+        cudaErrCk ( cudaMalloc((void**)&d_inputs,  totalSize  * sizeof(float)) ) ;
+        totalSize = 0;
+
+        for( auto const& [varName, data] : inputs) {
+            inputLocs[varName] = d_inputs + totalSize;
+            cudaErrCk( 
+              cudaMemcpy( inputLocs[varName]
+                        , &(data[0])
+                        , sizeof(float) * data.size()
+                        , cudaMemcpyHostToDevice)
+            );
+
+            totalSize += data.size() * data[0].size();
+        }
+        inputLocs[target] = d_inputs + totalSize;
+
+        for(int i = 0; i < batchSize; i++) {
+            memLocs[target + "_result"] = inputLocs[target] + i;
+            for (auto const& [varName, data] : inputs) {
+                memLocs[varName + "_result"] = inputLocs[varName + "_result"] + i;
+            }
+            compute();
+        }
+        cudaErrCk(
+          cudaMemcpy( &(result[0])
+                    , inputLocs[target]
+                    , batchSize * targetOp->resultSize * sizeof(float)
+                    , cudaMemcpyDeviceToHost)
+        );
+
+
+
+
+
+
+    }
+
 
 } // namespace DA
