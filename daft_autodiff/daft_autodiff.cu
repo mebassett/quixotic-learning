@@ -982,16 +982,13 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
           return;
         }
 
-        map<string, int> sizes ;
-        map<string, int> indices ;
         map<string, float*> inputLocs;
+        map<string, int> inputSizes;
         float* d_inputs;
         int batchSize = 0;
         int totalSize = 0;
         for( auto const& [varName, data] : inputs) {
             batchSize = data.size();
-            sizes.insert({varName, data[0].size()});
-            indices.insert({varName, 0});
             totalSize += data.size() * data[0].size();
         }
         totalSize += targetOp->resultSize * batchSize;
@@ -1000,29 +997,34 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
         for( auto const& [varName, data] : inputs) {
             inputLocs[varName] = d_inputs + totalSize;
-            cudaErrCk( 
-              cudaMemcpy( inputLocs[varName]
-                        , &(data[0])
-                        , sizeof(float) * data.size()
-                        , cudaMemcpyHostToDevice)
-            );
-
+            for(int i = 0; i < data.size(); i++) {
+                cudaErrCk( 
+                  cudaMemcpy( inputLocs[varName] + i * data[i].size()
+                            , &(data[i][0])
+                            , sizeof(float) * data.size()
+                            , cudaMemcpyHostToDevice)
+                );
+            }
+            inputSizes[varName] = data[0].size();
             totalSize += data.size() * data[0].size();
         }
         inputLocs[target] = d_inputs + totalSize;
 
         for(int i = 0; i < batchSize; i++) {
-            memLocs[target + "_result"] = inputLocs[target] + i;
+            memLocs[target + "_result"] = inputLocs[target] + i  ;
             for (auto const& [varName, data] : inputs) {
-                memLocs[varName + "_result"] = inputLocs[varName + "_result"] + i;
+                memLocs[varName + "_result"] = inputLocs[varName] + i * inputSizes[varName];
             }
-            compute();
+          compute();
         }
         cudaErrCk(
-          cudaMemcpy( &(result[0])
+          cudaMemcpy( &((*result)[0])
                     , inputLocs[target]
                     , batchSize * targetOp->resultSize * sizeof(float)
                     , cudaMemcpyDeviceToHost)
+        );
+        cudaErrCk(
+            cudaFree( d_inputs )
         );
 
 

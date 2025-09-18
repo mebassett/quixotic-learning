@@ -692,3 +692,37 @@ TEST_F(DaftConcatComputeTest, ConcatComputeTest) {
     EXPECT_EQ(result[0], 13) << "Daft Concat compute";
     EXPECT_EQ(testgrad[0], 3) << "Daft Concat grad";
 }
+
+class DaftBatchComputeTest : public testing::Test {
+protected:
+    cublasHandle_t cublasH;
+    Function* f;
+    vector<float> result {0,0,0};
+    
+    void SetUp() override {
+        cublasCreate(&cublasH);
+        f = new Function(&cublasH);
+
+        f->addOp(Operation::column("a", 2));
+        f->addOp(Operation::column("b", 2));
+        f->addOp(Operation::innerProduct("result","a","b",2));
+        f->compile();
+
+        map<string, vector<vector<float>>> inputs
+         {{"a", { { 1, 2}, {0,0}, {3, 4}}}, {"b", { { 0, 1}, {9,9}, {1,0}}}};
+
+        f->batchCompute(&result, "result", inputs); 
+    }
+
+    void TearDown() override {
+        cublasDestroy(cublasH);
+        delete f;
+        
+    }
+};
+
+TEST_F(DaftBatchComputeTest, BatchComputeTest) {
+    EXPECT_EQ(result[0], 2) << "result0";
+    EXPECT_EQ(result[1], 0) << "result1";
+    EXPECT_EQ(result[2], 3) << "result2";
+}
