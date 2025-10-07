@@ -697,7 +697,9 @@ class DaftBatchComputeTest : public testing::Test {
 protected:
     cublasHandle_t cublasH;
     Function* f;
-    vector<float> result {0,0,0};
+    map<string, vector<float>*> results;
+
+
     
     void SetUp() override {
         cublasCreate(&cublasH);
@@ -705,13 +707,17 @@ protected:
 
         f->addOp(Operation::column("a", 2));
         f->addOp(Operation::column("b", 2));
-        f->addOp(Operation::innerProduct("result","a","b",2));
+        f->addOp(Operation::innerProduct("result1","a","b",2));
+        f->addOp(Operation::innerProduct("result2", "result1", "result1", 1));
         f->compile();
+
+        results["result1"] = new vector<float>(3);
+        results["result2"] = new vector<float>(3);
 
         map<string, vector<vector<float>>> inputs
          {{"a", { { 1, 2}, {0,0}, {3, 4}}}, {"b", { { 0, 1}, {9,9}, {1,0}}}};
 
-        f->batchCompute(&result, "result", inputs); 
+        f->batchCompute(results, {"result1","result2"}, inputs); 
     }
 
     void TearDown() override {
@@ -722,7 +728,11 @@ protected:
 };
 
 TEST_F(DaftBatchComputeTest, BatchComputeTest) {
-    EXPECT_EQ(result[0], 2) << "result0";
-    EXPECT_EQ(result[1], 0) << "result1";
-    EXPECT_EQ(result[2], 3) << "result2";
+    EXPECT_EQ((*results["result1"])[0], 2) << "result1-0";
+    EXPECT_EQ((*results["result1"])[1], 0) << "result1-1";
+    EXPECT_EQ((*results["result1"])[2], 3) << "result1-2";
+
+    EXPECT_EQ((*results["result2"])[0], 4) << "result2-0";
+    EXPECT_EQ((*results["result2"])[1], 0) << "result2-1";
+    EXPECT_EQ((*results["result2"])[2], 9) << "result2-2";
 }

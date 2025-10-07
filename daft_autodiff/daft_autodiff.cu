@@ -974,24 +974,37 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
     }
 
-    void Function::batchCompute(vector<float>* result, string target, const map<string, vector<vector<float>>>& inputs) {
-        const auto targetOp = find_if(ops.begin(), ops.end(), [target](auto needle) { return needle.name == target;});
-        if(targetOp == ops.end()) {
-          cout << "batchCompute cannot find op " << target << endl;
-          exit(1);
-          return;
+    void Function::batchCompute( map<string, vector<float>*> results
+                               , const vector<string> targets 
+                               , const map<string, vector<vector<float>>>& inputs) {
+        map<string, Operation*> targetOps;
+        int totalTargetSize = 0;
+        int batchSize = 0;
+        int totalSize = 0;
+        for(const auto target : targets) {
+          const auto targetOp = find_if(ops.begin(), ops.end(), [target](auto needle) { return needle.name == target;});
+          if(targetOp != ops.end()) {
+            targetOps[target] = &(*targetOp);
+          } else {
+            cout << "batchCompute cannot find op " << target << endl;
+            exit(1);
+            return;
+          }
+
         }
+
 
         map<string, float*> inputLocs;
         map<string, int> inputSizes;
         float* d_inputs;
-        int batchSize = 0;
-        int totalSize = 0;
         for( auto const& [varName, data] : inputs) {
             batchSize = data.size();
             totalSize += data.size() * data[0].size();
         }
-        totalSize += targetOp->resultSize * batchSize;
+        for ( const auto target : targets ){
+            totalTargetSize += targetOps[target]->resultSize * batchSize;
+        }
+        totalSize += totalTargetSize; 
         cudaErrCk ( cudaMalloc((void**)&d_inputs,  totalSize  * sizeof(float)) ) ;
         totalSize = 0;
 
@@ -1008,21 +1021,30 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             inputSizes[varName] = data[0].size();
             totalSize += data.size() * data[0].size();
         }
-        inputLocs[target] = d_inputs + totalSize;
+        for(const auto target : targets) {
+            inputLocs[target] = d_inputs + totalSize;
+            totalSize += targetOps[target]->resultSize * batchSize;
+
+        }
 
         for(int i = 0; i < batchSize; i++) {
-            memLocs[target + "_result"] = inputLocs[target] + i  ;
+            for( const auto target: targets) {
+                memLocs[target + "_result"] = inputLocs[target] + i  ;
+            }
             for (auto const& [varName, data] : inputs) {
                 memLocs[varName + "_result"] = inputLocs[varName] + i * inputSizes[varName];
             }
           compute();
         }
-        cudaErrCk(
-          cudaMemcpy( &((*result)[0])
-                    , inputLocs[target]
-                    , batchSize * targetOp->resultSize * sizeof(float)
-                    , cudaMemcpyDeviceToHost)
-        );
+        for (const auto target: targets) {
+            vector<float>* t = results.at(target);
+            cudaErrCk(
+              cudaMemcpy( &((*t)[0])
+                        , inputLocs[target]
+                        , batchSize * targetOps[target]->resultSize * sizeof(float)
+                        , cudaMemcpyDeviceToHost)
+            );
+        }
         cudaErrCk(
             cudaFree( d_inputs )
         );
