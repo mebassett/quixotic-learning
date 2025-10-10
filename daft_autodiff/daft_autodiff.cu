@@ -974,7 +974,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
     }
 
-    void Function::batchCompute( map<string, vector<float>*> results
+    void Function::batchCompute( map<string, vector<vector<float>>*> results
                                , const vector<string> targets 
                                , const map<string, vector<vector<float>>>& inputs) {
         map<string, Operation*> targetOps;
@@ -1029,7 +1029,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
         for(int i = 0; i < batchSize; i++) {
             for( const auto target: targets) {
-                memLocs[target + "_result"] = inputLocs[target] + i  ;
+                memLocs[target + "_result"] = inputLocs[target] + i * targetOps[target]->resultSize ;
             }
             for (auto const& [varName, data] : inputs) {
                 memLocs[varName + "_result"] = inputLocs[varName] + i * inputSizes[varName];
@@ -1037,13 +1037,18 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
           compute();
         }
         for (const auto target: targets) {
-            vector<float>* t = results.at(target);
+            vector<vector<float>>* t = results.at(target);
+            float* temp = new float [batchSize * targetOps[target]->resultSize ];
             cudaErrCk(
-              cudaMemcpy( &((*t)[0])
+              cudaMemcpy( temp
                         , inputLocs[target]
                         , batchSize * targetOps[target]->resultSize * sizeof(float)
                         , cudaMemcpyDeviceToHost)
             );
+            for(int i=0;i<batchSize;i++) { 
+                t->push_back(vector(temp + i * targetOps[target]->resultSize, temp + ((i+1)*targetOps[target]->resultSize)));
+            }
+            delete [] temp;
         }
         cudaErrCk(
             cudaFree( d_inputs )

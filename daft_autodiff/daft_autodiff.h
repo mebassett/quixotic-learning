@@ -132,7 +132,7 @@ struct Function {
     void getGrad(string name, float* result);
     void computeGrad(string name, float* seed);
     void computeGrad(string name);
-    void batchCompute(const map<string, vector<float>*> results, const vector<string> targets, const map<string, vector<vector<float>>>& inputs);
+    void batchCompute(map<string, vector<vector<float>>*> results, const vector<string> targets, const map<string, vector<vector<float>>>& inputs);
     ~Function();
 };
 

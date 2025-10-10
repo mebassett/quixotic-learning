@@ -697,7 +697,7 @@ class DaftBatchComputeTest : public testing::Test {
 protected:
     cublasHandle_t cublasH;
     Function* f;
-    map<string, vector<float>*> results;
+    map<string, vector<vector<float>>*> results;
 
 
     
@@ -711,8 +711,8 @@ protected:
         f->addOp(Operation::innerProduct("result2", "result1", "result1", 1));
         f->compile();
 
-        results["result1"] = new vector<float>(3);
-        results["result2"] = new vector<float>(3);
+        results["result1"] = new vector<vector<float>>;
+        results["result2"] = new vector<vector<float>>;
 
         map<string, vector<vector<float>>> inputs
          {{"a", { { 1, 2}, {0,0}, {3, 4}}}, {"b", { { 0, 1}, {9,9}, {1,0}}}};
@@ -728,11 +728,11 @@ protected:
 };
 
 TEST_F(DaftBatchComputeTest, BatchComputeTest) {
-    EXPECT_EQ((*results["result1"])[0], 2) << "result1-0";
-    EXPECT_EQ((*results["result1"])[1], 0) << "result1-1";
-    EXPECT_EQ((*results["result1"])[2], 3) << "result1-2";
+    EXPECT_EQ((*results["result1"])[0][0], 2) << "result1-0";
+    EXPECT_EQ((*results["result1"])[1][0], 0) << "result1-1";
+    EXPECT_EQ((*results["result1"])[2][0], 3) << "result1-2";
 
-    EXPECT_EQ((*results["result2"])[0], 4) << "result2-0";
-    EXPECT_EQ((*results["result2"])[1], 0) << "result2-1";
-    EXPECT_EQ((*results["result2"])[2], 9) << "result2-2";
+    EXPECT_EQ((*results["result2"])[0][0], 4) << "result2-0";
+    EXPECT_EQ((*results["result2"])[1][0], 0) << "result2-1";
+    EXPECT_EQ((*results["result2"])[2][0], 9) << "result2-2";
 }
