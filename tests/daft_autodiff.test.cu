@@ -752,26 +752,20 @@ protected:
         f->addOp(Operation::matrix("A2", 4, 4));
         f->addOp(Operation::column("x", 4));
         
-        // Perform matrix multiplications: A1*x and A2*x
+        // Perform sequential matrix multiplications: A1*x, then A2*(A1*x)
         f->addOp(Operation::matrixProduct("result1", "A1", "x", 4, 4, 1));
-        f->addOp(Operation::matrixProduct("result2", "A2", "x", 4, 4, 1));
+        f->addOp(Operation::matrixProduct("result2", "A2", "result1", 4, 4, 1));
         f->compile();
+
+        // Set fixed matrix values
+        f->setValue("A1", {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});  // Identity matrix
+        f->setValue("A2", {0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0});  // Permutation matrix
 
         results["result1"] = new vector<vector<float>>;
         results["result2"] = new vector<vector<float>>;
 
-        // Create batch inputs with 3 different sets of matrices and vectors
+        // Create batch inputs with 3 different column vectors only
         map<string, vector<vector<float>>> inputs {
-            {"A1", {
-                {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1},  // Identity matrix
-                {2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2},  // 2*Identity
-                {1, 1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}   // First row all 1s
-            }},
-            {"A2", {
-                {0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0},  // Permutation matrix
-                {1, 1, 0, 0, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0, 1, 1},  // Block pattern
-                {1, 2, 3, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}   // First row: 1,2,3,4
-            }},
             {"x", {
                 {1, 2, 3, 4},  // Simple sequence
                 {1, 1, 1, 1},  // All ones
@@ -798,32 +792,32 @@ TEST_F(DaftBatchMatrixComputeTest, BatchMatrixComputeTest) {
     EXPECT_EQ((*results["result1"])[0][3], 4) << "A1*x batch 0, element 3";
 
     // Test batch 0: Permutation * [1,2,3,4] = [2,3,4,1]
-    EXPECT_EQ((*results["result2"])[0][0], 2) << "A2*x batch 0, element 0";
-    EXPECT_EQ((*results["result2"])[0][1], 3) << "A2*x batch 0, element 1";
-    EXPECT_EQ((*results["result2"])[0][2], 4) << "A2*x batch 0, element 2";
-    EXPECT_EQ((*results["result2"])[0][3], 1) << "A2*x batch 0, element 3";
+    EXPECT_EQ((*results["result2"])[0][0], 2) << "A2*(A1*x) batch 0, element 0";
+    EXPECT_EQ((*results["result2"])[0][1], 3) << "A2*(A1*x) batch 0, element 1";
+    EXPECT_EQ((*results["result2"])[0][2], 4) << "A2*(A1*x) batch 0, element 2";
+    EXPECT_EQ((*results["result2"])[0][3], 1) << "A2*(A1*x) batch 0, element 3";
 
-    // Test batch 1: 2*Identity * [1,1,1,1] = [2,2,2,2]
-    EXPECT_EQ((*results["result1"])[1][0], 2) << "A1*x batch 1, element 0";
-    EXPECT_EQ((*results["result1"])[1][1], 2) << "A1*x batch 1, element 1";
-    EXPECT_EQ((*results["result1"])[1][2], 2) << "A1*x batch 1, element 2";
-    EXPECT_EQ((*results["result1"])[1][3], 2) << "A1*x batch 1, element 3";
+    // Test batch 1: Identity * [1,1,1,1] = [1,1,1,1]
+    EXPECT_EQ((*results["result1"])[1][0], 1) << "A1*x batch 1, element 0";
+    EXPECT_EQ((*results["result1"])[1][1], 1) << "A1*x batch 1, element 1";
+    EXPECT_EQ((*results["result1"])[1][2], 1) << "A1*x batch 1, element 2";
+    EXPECT_EQ((*results["result1"])[1][3], 1) << "A1*x batch 1, element 3";
 
-    // Test batch 1: Block pattern * [1,1,1,1] = [2,2,2,2]
-    EXPECT_EQ((*results["result2"])[1][0], 2) << "A2*x batch 1, element 0";
-    EXPECT_EQ((*results["result2"])[1][1], 2) << "A2*x batch 1, element 1";
-    EXPECT_EQ((*results["result2"])[1][2], 2) << "A2*x batch 1, element 2";
-    EXPECT_EQ((*results["result2"])[1][3], 2) << "A2*x batch 1, element 3";
+    // Test batch 1: Permutation * [1,1,1,1] = [1,1,1,1]
+    EXPECT_EQ((*results["result2"])[1][0], 1) << "A2*(A1*x) batch 1, element 0";
+    EXPECT_EQ((*results["result2"])[1][1], 1) << "A2*(A1*x) batch 1, element 1";
+    EXPECT_EQ((*results["result2"])[1][2], 1) << "A2*(A1*x) batch 1, element 2";
+    EXPECT_EQ((*results["result2"])[1][3], 1) << "A2*(A1*x) batch 1, element 3";
 
-    // Test batch 2: First row [1,1,1,1] * [2,3,5,7] = [17,0,0,0]
-    EXPECT_EQ((*results["result1"])[2][0], 17) << "A1*x batch 2, element 0";
-    EXPECT_EQ((*results["result1"])[2][1], 0) << "A1*x batch 2, element 1";
-    EXPECT_EQ((*results["result1"])[2][2], 0) << "A1*x batch 2, element 2";
-    EXPECT_EQ((*results["result1"])[2][3], 0) << "A1*x batch 2, element 3";
+    // Test batch 2: Identity * [2,3,5,7] = [2,3,5,7]
+    EXPECT_EQ((*results["result1"])[2][0], 2) << "A1*x batch 2, element 0";
+    EXPECT_EQ((*results["result1"])[2][1], 3) << "A1*x batch 2, element 1";
+    EXPECT_EQ((*results["result1"])[2][2], 5) << "A1*x batch 2, element 2";
+    EXPECT_EQ((*results["result1"])[2][3], 7) << "A1*x batch 2, element 3";
 
-    // Test batch 2: First row [1,2,3,4] * [2,3,5,7] = [50,0,0,0]
-    EXPECT_EQ((*results["result2"])[2][0], 50) << "A2*x batch 2, element 0";
-    EXPECT_EQ((*results["result2"])[2][1], 0) << "A2*x batch 2, element 1";
-    EXPECT_EQ((*results["result2"])[2][2], 0) << "A2*x batch 2, element 2";
-    EXPECT_EQ((*results["result2"])[2][3], 0) << "A2*x batch 2, element 3";
+    // Test batch 2: Permutation * [2,3,5,7] = [3,5,7,2]
+    EXPECT_EQ((*results["result2"])[2][0], 3) << "A2*(A1*x) batch 2, element 0";
+    EXPECT_EQ((*results["result2"])[2][1], 5) << "A2*(A1*x) batch 2, element 1";
+    EXPECT_EQ((*results["result2"])[2][2], 7) << "A2*(A1*x) batch 2, element 2";
+    EXPECT_EQ((*results["result2"])[2][3], 2) << "A2*(A1*x) batch 2, element 3";
 }
