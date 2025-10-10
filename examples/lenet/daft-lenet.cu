@@ -256,27 +256,31 @@ int main() {
     cout << "Testing initial model performance...\n";
     int numRight = 0;
     float errorRate = 0.0;
+
+    map<string, vector<vector<float>>> testInputs;
     
     for (auto row : testRows) {
         vector<float> input(begin(row.x), end(row.x));
         vector<float> target(begin(row.t), end(row.t));
-        
-        f.setValue("featureInput", input);
-        f.setValue("targetInput", target);
-        
-        f.compute();
-        
-        float* prediction = new float[OUTPUT_SIZE];
-        float* loss = new float;
-        
-        f.getValue("prediction", prediction);
-        f.getValue("loss", loss);
-        
-        int out = fromModelOutput(prediction);
+
+        testInputs["featureInput"].push_back(input);
+        testInputs["targetInput"].push_back(target);
+    }
+
+    map<string, vector<vector<float>>*> testResults;
+    testResults["prediction"] = new vector<vector<float>>;
+    testResults["loss"] = new vector<vector<float>>;
+
+    f.batchCompute(testResults, {"prediction", "loss"}, testInputs);
+
+    for(int i=0;i<testRows.size();i++){
+        vector<float> prediction = (*(testResults["prediction"]))[i];
+        float* loss = &((*(testResults["loss"]))[i][0]);
+
+        int out = fromModelOutput(&(prediction[0]));
         errorRate += *loss;
-        if (out == row.y) numRight++;
-        
-        delete[] prediction;
+        if (out == testRows[i].y) numRight++;
+
         delete loss;
     }
     cout << "Initial accuracy: " << numRight << " / " << testRows.size() << "\n";
