@@ -1014,7 +1014,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 cudaErrCk( 
                   cudaMemcpy( inputLocs[varName] + i * data[i].size()
                             , &(data[i][0])
-                            , sizeof(float) * data.size()
+                            , sizeof(float) * data[i].size()
                             , cudaMemcpyHostToDevice)
                 );
             }
