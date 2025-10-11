@@ -10,6 +10,8 @@ using namespace std;
 
 namespace DA {
 
+void noOpBatchCompute(Function* f, int idx, int length) {}
+
 #define cudaErrCk(ans) { cudaAssert((ans), __FILE__, __LINE__); }
 inline void cudaAssert(cudaError_t err, const char *file, int line) {
     if(err != cudaSuccess) {
@@ -974,9 +976,14 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
     }
 
-    void Function::batchCompute( map<string, vector<vector<float>>*> results
+    void Function::batchCompute( const map<string, vector<vector<float>>*>& results
                                , const vector<string> targets 
-                               , const map<string, vector<vector<float>>>& inputs) {
+                               , const map<string, vector<vector<float>>>& inputs
+                               , void (*batchFunction)(Function*, int, int )) {
+        // save the original memLocs since we move these aroudn a lot. restore
+        // them at the end.
+        map<string, float*> originalMemLocs = memLocs;
+
         map<string, Operation*> targetOps;
         int totalTargetSize = 0;
         int batchSize = 0;
@@ -1034,10 +1041,12 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             for (auto const& [varName, data] : inputs) {
                 memLocs[varName + "_result"] = inputLocs[varName] + i * inputSizes[varName];
             }
+          resetGrad();
           compute();
+          (*batchFunction)(this, i, batchSize);
         }
         for (const auto target: targets) {
-            vector<vector<float>>* t = results.at(target);
+            vector<vector<float>>* rows = results.at(target);
             float* temp = new float [batchSize * targetOps[target]->resultSize ];
             cudaErrCk(
               cudaMemcpy( temp
@@ -1046,20 +1055,30 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                         , cudaMemcpyDeviceToHost)
             );
             for(int i=0;i<batchSize;i++) { 
-                t->push_back(vector(temp + i * targetOps[target]->resultSize, temp + ((i+1)*targetOps[target]->resultSize)));
+                rows->push_back(vector(temp + i * targetOps[target]->resultSize, temp + ((i+1)*targetOps[target]->resultSize)));
             }
             delete [] temp;
         }
+
+        memLocs = originalMemLocs;
         cudaErrCk(
             cudaFree( d_inputs )
         );
 
-
-
-
-
-
     }
+
+
+    void Function::batchCompute( const map<string, vector<vector<float>>*>& results
+                               , const vector<string> targets 
+                               , const map<string, vector<vector<float>>>& inputs) {
+        batchCompute( results, targets, inputs, noOpBatchCompute);
+    }
+
+
+
+
+
+
 
 
 } // namespace DA
