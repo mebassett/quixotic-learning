@@ -19,13 +19,13 @@ It also supports a "batchCompute", you might think this is batch processing, id 
 
 The implementation of the convolution operation is a bit, well, daft.  It allows you to specify the kernel as a matrix, but it "unrolls" it into a larger matrix so that we can treat convolution as just a regular matrix operation.  The rolling and unrolling for the computation and gradients is probably unnecessary.
 
-you can dive right into the code at daft_autodiff/daft_autodiff.cu .
+you can dive right into the code at [daft_autodiff/daft_autodiff.cu](daft_autodiff/daft_autodiff.cu).
 
-An example of using it to implement a forward feed neural network is at examples/ffnn/daft-ffnn.cu
+An example of using it to implement a forward feed neural network is at [examples/ffnn/daft-ffnn.cu](examples/ffnn/daft-ffnn.cu).
 
-And an example of using it to implement LeNet-5 by using the batchCompute is at examples/lenet/daft-lenet.cu.
+And an example of using it to implement LeNet-5 by using the batchCompute is at [examples/lenet/daft-lenet.cu](examples/lenet/daft-lenet.cu).
 
-The test suite, tests/daft_autodiff.test.cu , is also instructive. While I avoided LLMs for most of this project, I did use them on bits I considered boring or where I felt I wasn't learning anything.  In particular, I used them on the test suite after I had written it for silly-autodiff.  Other places include the cmake configuration.
+The test suite, [tests/daft_autodiff.test.cu](tests/daft_autodiff.test.cu), is also instructive. While I avoided LLMs for most of this project, I did use them on bits I considered boring or where I felt I wasn't learning anything.  In particular, I used them on the test suite after I had written it for silly-autodiff.  Other places include the cmake configuration.
 
 ## building
 
