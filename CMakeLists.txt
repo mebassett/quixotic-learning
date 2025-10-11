@@ -20,7 +20,7 @@ set(CMAKE_CXX_FLAGS_RELWITHDEBINFO "-O2 -g -DNDEBUG")
 # CUDA compiler flags for different build types
 set(CMAKE_CUDA_FLAGS_DEBUG "-g -G -O0 -DDEBUG")
 set(CMAKE_CUDA_FLAGS_RELEASE "-O3 -DNDEBUG --use_fast_math")
-set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "-O2 -g -lineinfo -DNDEBUG")
+set(CMAKE_CUDA_FLAGS_RELWITHDEBINFO "-O2 -g -lineinfo -DNDEBUG --use_fast_math")
 
 find_package(CUDAToolkit REQUIRED)
 
