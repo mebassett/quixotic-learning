@@ -46,11 +46,33 @@ $ cmake . -B build/
 $ cmake --build build/
 ```
 
-This should build both examples and the tests.  You can run the tests by
+This should build both examples and the tests in Release mode (optimized) by default. You can run the tests by
 ```bash
 $ cd build && ctest
 ```
 Note that the tests run twice - the second time the whole test suite is run under `compute-sanitizer --tool memcheck`, which checks for memory leaks on the GPU.
+
+### Build Modes
+
+The project supports different build configurations:
+
+```bash
+# Build in Release mode (default - maximum optimization):
+cmake -DCMAKE_BUILD_TYPE=Release -B build-release
+cmake --build build-release
+
+# Build in Debug mode (no optimization, full debug symbols):
+cmake -DCMAKE_BUILD_TYPE=Debug -B build-debug
+cmake --build build-debug
+
+# Build with debug info + moderate optimization (good for profiling):
+cmake -DCMAKE_BUILD_TYPE=RelWithDebInfo -B build-relwithdebinfo
+cmake --build build-relwithdebinfo
+```
+
+**Release mode** includes aggressive optimizations (`-O3`, `--use_fast_math`, `-march=native`) for both CPU and GPU code, which can significantly improve training performance.
+
+**Debug mode** disables optimizations and includes full debug symbols for easier debugging with tools like `gdb` or `compute-sanitizer`.
 
 ## examples
 
