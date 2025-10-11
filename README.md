@@ -80,6 +80,7 @@ This is a very slow autodiff.  On my machine (NVIDIA GeForce GTX 1060 6gb, and a
 ## What's next
 
 - [ ] supporting batch processing - I want to figure out how to get it within 10x of a pytorch implementation!
+- [ ] implement AlexNet and hope it is not too slow
 - [ ] saving and loading model weights, maybe supporting ONNX?
 - [ ] implementing support for backprop through time
 - [ ] maybe some form of a repl? 
