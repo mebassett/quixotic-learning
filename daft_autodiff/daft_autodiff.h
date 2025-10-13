@@ -20,9 +20,9 @@ enum class OperationType
     , Add
     , Scalar
     , InnerProduct
-    , Convolution
-    , MaxPool
-    , Concat
+    //, Convolution
+    //, MaxPool
+    //, Concat
     };
 
 ostream& operator<<(ostream &o, const OperationType t) ;
@@ -82,7 +82,7 @@ struct MaxPoolConfig {
     const uint targetCols;
 };
 
-using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig, ConvolutionConfig, MaxPoolConfig, ConcatConfig>;
+using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig>;//, ConvolutionConfig, MaxPoolConfig, ConcatConfig>;
 
 struct Operation {
     const OperationType opType;
