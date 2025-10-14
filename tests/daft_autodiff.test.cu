@@ -49,23 +49,25 @@ protected:
 };
 
 TEST_F(DaftInnerProductTest, DaftInnerProductCompute) {
-    f->setValue("ab", {3.0, 4.0});
-    f->setValue("xy", {1.0, 2.0});
+    f->setValue("ab", {{3.0, 4.0}});
+    f->setValue("xy", {{1.0, 2.0}});
     f->compute();
-    f->getValue("test1", result);
-    EXPECT_EQ(result[0], 11.0) << "compute";
+    vector<vector<float>> resultVec;
+    f->getValue("test1", &resultVec);
+    EXPECT_EQ(resultVec[0][0], 11.0) << "compute";
 
-    g->setValue("x", {9});
+    g->setValue("x", {{9}});
     g->compute();
     g->computeGrad("test1");
     g->getGrad("x", result2);
     EXPECT_EQ(result2[0], 18) << "x0 grad";
 
-    h->setValue("sr", {1.0,2.0});
-    h->setValue("tu", {3.0,-3.0});
+    h->setValue("sr", {{1.0,2.0}});
+    h->setValue("tu", {{3.0,-3.0}});
     h->compute();
-    h->getValue("test2", result2);
-    EXPECT_EQ(*result2, -3.0) << "compute";
+    vector<vector<float>> resultVec2;
+    h->getValue("test2", &resultVec2);
+    EXPECT_EQ(resultVec2[0][0], -3.0) << "compute";
 
     h->computeGrad("test2");
     h->getGrad("sr", result3);
@@ -111,27 +113,29 @@ protected:
 };
 
 TEST_F(DaftMatrixColProductTest, DaftMatrixColProductCompute) {
-    f->setValue("abcd", {1,-1,-1,1});
-    f->setValue("xy", {1,2});
+    f->setValue("abcd", {{1,-1,-1,1}});
+    f->setValue("xy", {{1,2}});
     f->compute();
     f->computeGrad("f");
-    f->getValue("f", result);
+    vector<vector<float>> resultVec;
+    f->getValue("f", &resultVec);
     f->getGrad("abcd", matrixGrad);
-    EXPECT_EQ(result[0],-1) << "compute0";
-    EXPECT_EQ(result[1],1) << "compute1";
+    EXPECT_EQ(resultVec[0][0],-1) << "compute0";
+    EXPECT_EQ(resultVec[0][1],1) << "compute1";
     EXPECT_EQ(matrixGrad[0], 1) << "abcd grad";
     EXPECT_EQ(matrixGrad[1], 2) << "abcd grad";
     EXPECT_EQ(matrixGrad[2], 1) << "abcd grad";
     EXPECT_EQ(matrixGrad[3], 2) << "abcd grad";
 
-    g->setValue("A", {1,2,3,4});
-    g->setValue("B", {1,1,-1,1});
+    g->setValue("A", {{1,2,3,4}});
+    g->setValue("B", {{1,1,-1,1}});
     g->compute();
-    g->getValue("g", result2);
-    EXPECT_EQ(result2[0],-1) << "AB00";
-    EXPECT_EQ(result2[1],3) << "AB01";
-    EXPECT_EQ(result2[2],-1) << "AB10";
-    EXPECT_EQ(result2[3],7) << "AB11";
+    vector<vector<float>> resultVec2;
+    g->getValue("g", &resultVec2);
+    EXPECT_EQ(resultVec2[0][0],-1) << "AB00";
+    EXPECT_EQ(resultVec2[0][1],3) << "AB01";
+    EXPECT_EQ(resultVec2[0][2],-1) << "AB10";
+    EXPECT_EQ(resultVec2[0][3],7) << "AB11";
 
 
 
@@ -163,13 +167,14 @@ protected:
 };
 
 TEST_F(DaftScalarTest, DaftScalarCompute) {
-    f->setValue("xy",{1,2});
+    f->setValue("xy",{{1,2}});
     f->compute();
     f->computeGrad("test");
-    f->getValue("test", result);
+    vector<vector<float>> resultVec;
+    f->getValue("test", &resultVec);
     f->getGrad("xy", resultGrad);
-    EXPECT_EQ(result[0], 5) << "compute0";
-    EXPECT_EQ(result[1], 10) << "compute1";
+    EXPECT_EQ(resultVec[0][0], 5) << "compute0";
+    EXPECT_EQ(resultVec[0][1], 10) << "compute1";
     EXPECT_EQ(resultGrad[0], 5) << "grad0";
     EXPECT_EQ(resultGrad[1], 5) << "grad1";
 }
@@ -200,13 +205,14 @@ protected:
     }
 };
 TEST_F(DaftAddTest, DaftAddCompute) {
-    f->setValue("xy",{1,2});
+    f->setValue("xy",{{1,2}});
     f->compute();
     f->computeGrad("f");
-    f->getValue("f", result);
+    vector<vector<float>> resultVec;
+    f->getValue("f", &resultVec);
     f->getGrad("xy", resultGrad);
-    EXPECT_EQ(result[0], 2) << "compute0";
-    EXPECT_EQ(result[1], 4) << "compute1";
+    EXPECT_EQ(resultVec[0][0], 2) << "compute0";
+    EXPECT_EQ(resultVec[0][1], 4) << "compute1";
     EXPECT_EQ(resultGrad[0], 2) << "grad0";
     EXPECT_EQ(resultGrad[1], 2) << "grad1";
 }
@@ -239,16 +245,17 @@ protected:
 };
 
 TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
-    f->setValue("z", { 500, -500, 0.5, -1 });
+    f->setValue("z", {{ 500, -500, 0.5, -1 }});
     f->compute();
     f->computeGrad("f");
-    f->getValue("f", result);
+    vector<vector<float>> resultVec;
+    f->getValue("f", &resultVec);
     f->getGrad("z", resultGrad);
 
     float values[4] = { 500, -5, 0.5, -0.01 };
     float grads[4] = { 1, 0.01, 1, 0.01 };
     for (int i = 0; i < 4; i++) {
-        EXPECT_EQ(result[i], values[i]) << "LeakyReLU compute (" << i << ")";
+        EXPECT_EQ(resultVec[0][i], values[i]) << "LeakyReLU compute (" << i << ")";
         EXPECT_EQ(resultGrad[i], grads[i]) << "z grad (" << i << ")";
     }
 
@@ -758,8 +765,8 @@ protected:
         f->compile();
 
         // Set fixed matrix values
-        f->setValue("A1", {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});  // Identity matrix
-        f->setValue("A2", {0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0});  // Permutation matrix
+        f->setValue("A1", {{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1}});  // Identity matrix
+        f->setValue("A2", {{0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 1, 0, 0, 0}});  // Permutation matrix
 
         results["result1"] = new vector<vector<float>>;
         results["result2"] = new vector<vector<float>>;

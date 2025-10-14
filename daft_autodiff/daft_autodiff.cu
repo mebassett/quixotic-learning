@@ -463,15 +463,17 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
     // }
 
     Function::Function(cublasHandle_t* cublasH) : ops(), memLocs(), cublasH(cublasH) {
+        batchSize = 1; 
     }
 
-    void Function::compile() {
+    void Function::compile(uint _batchSize) {
+        this->batchSize = _batchSize;
         totalSize = 0; gradSize = 0; workingSize = 0; resultSize = 0;
         for(auto op : ops){
-            totalSize += op.workingSize + op.resultSize + op.gradSize;
-            gradSize += op.gradSize;
-            workingSize += op.workingSize;
-            resultSize += op.resultSize;
+            totalSize += (op.workingSize + op.resultSize + op.gradSize) * batchSize;
+            gradSize += op.gradSize * batchSize;
+            workingSize += op.workingSize * batchSize;
+            resultSize += op.resultSize * batchSize;
         }
         cudaMalloc((void**)&d_value,  totalSize  * sizeof(float));
         cudaMemset(d_value, 0, totalSize * sizeof(float));
@@ -522,9 +524,34 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             ops.push_back(op);
     }
 
-    void Function::setValue(string name, vector<float> value) {
-        // trusting the user to give us a vector of the right size! eek!    
-        cudaMemcpy(memLocs[name+"_result"], &(value[0]), sizeof(float)*value.size(), cudaMemcpyHostToDevice);
+    void Function::setValue(string name, const vector<vector<float>>& values) {
+        const auto op = find_if(ops.begin(), ops.end(), [name](auto needle) { return needle.name == name;});
+        if(op == ops.end()) {
+          cout << "setValue cannot find op " << name << endl;
+          exit(1);
+          return;
+        }
+        if(values.size() != batchSize && 
+            op->opType != OperationType::InputColumn && op->opType != OperationType::InputMatrix) {
+          cout << "setValues on " << name << " doesn't match the batchSize. batchSize is "
+               << batchSize << " while the values size is " << values.size() << "." << endl;
+          exit(1);
+          return;
+        }
+        if(values[0].size() != op->resultSize) {
+          cout << "setValues values passed in for " << name << " do not match op's result size. resultSize is "
+               << op->resultSize << " while the values size is " << values[0].size() << "." << endl;
+          exit(1);
+          return;
+        }
+        // first we need to flatten the vector so we can have one nice contiguous memory block to copy to cuda
+        // device. 
+        // hmmmm...maybe vector<vector> isn't the right type...
+        vector<float> total;
+        for(const auto v : values) {
+            total.insert(total.end(), v.begin(), v.end());
+        }
+        cudaMemcpy(memLocs[name+"_result"], &(total[0]), sizeof(float)*total.size(), cudaMemcpyHostToDevice);
     }
 
     void Function::gradDescent(string name, float learningRate) {
@@ -553,16 +580,22 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
     }
 
-    void Function::getValue(string name, float* result) {
-        Operation *op;
-        for(auto needle : ops){
-            if(needle.name == name) {
-                op = &needle;
-                break;
-            }
+    void Function::getValue(string name, vector<vector<float>>* results) {
+        const auto op = find_if(ops.begin(), ops.end(), [name](auto needle) { return needle.name == name;});
+        if(op == ops.end()) {
+          cout << "getValue cannot find op " << name << endl;
+          exit(1);
+          return;
         }
+        float* resultsTemp = new float [ batchSize * op->rows * op-> cols ];
         float* d_value = memLocs[name+"_result"];
-        cudaMemcpy(result, d_value, sizeof(float)*op->rows*op->cols,cudaMemcpyDeviceToHost);
+
+        cudaMemcpy(resultsTemp, d_value, sizeof(float)*op->rows*op->cols,cudaMemcpyDeviceToHost);
+
+        for(int i=0;i<batchSize;i++) {
+            results->push_back(vector(resultsTemp + i * op->resultSize, resultsTemp + ((i+1) * op->resultSize) ));
+        }
+        delete [] resultsTemp ;
     }
 
     void Function::getGrad(string name, float* result) {

@@ -63,8 +63,8 @@ int main() {
 
     initializeWeights(&weights1, &weights2, -0.05, 0.05);
 
-    f->setValue("weights1", weights1);
-    f->setValue("weights2", weights2);
+    f->setValue("weights1", {weights1});
+    f->setValue("weights2", {weights2});
 
 
     Training_Data rows = load_data_from_file("../data/mnist_train.txt", 60000);
@@ -80,20 +80,18 @@ int main() {
     for(auto row : testRows) {
         vector<float> input (begin(row.x), end(row.x));
         vector<float> target (begin(row.t), end(row.t));
-        f->setValue("input", input);
-        f->setValue("targetInput", target);
-        float *prediction = new float[OUTPUT_SIZE];
-        float *error = new float;
+        f->setValue("input", {input});
+        f->setValue("targetInput", {target});
+        vector<vector<float>> prediction;
+        vector<vector<float>> error;
 
         f->compute();
-        f->getValue("prediction", prediction);
-        f->getValue("error", error);
+        f->getValue("prediction", &prediction);
+        f->getValue("error", &error);
 
-        int out = fromModelOutput(prediction);
-        errorRate += *error;
+        int out = fromModelOutput(&(prediction[0][0]));
+        errorRate += error[0][0];
         if(out == row.y) numRight++;
-        delete prediction;
-        delete error;
     }
     cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
     cout << "model error on test set:" << errorRate << " .\n";
@@ -106,8 +104,8 @@ int main() {
             vector<float> input (begin(row.x), end(row.x));
             vector<float> target (begin(row.t), end(row.t));
 
-            f->setValue("input", input);
-            f->setValue("targetInput", target);
+            f->setValue("input", {input});
+            f->setValue("targetInput", {target});
 
             f->compute();
             f->computeGrad("error");
@@ -124,20 +122,18 @@ int main() {
         for(auto row : testRows) {
             vector<float> input (begin(row.x), end(row.x));
             vector<float> target (begin(row.t), end(row.t));
-            f->setValue("input", input);
-            f->setValue("targetInput", target);
-            float *prediction = new float[OUTPUT_SIZE];
-            float *error = new float;
+            f->setValue("input", {input});
+            f->setValue("targetInput", {target});
+            vector<vector<float>> prediction;
+            vector<vector<float>> error ;
 
             f->compute();
-            f->getValue("prediction", prediction);
-            f->getValue("error", error);
+            f->getValue("prediction", &prediction);
+            f->getValue("error", &error);
 
-            int out = fromModelOutput(prediction);
-            errorRate += *error;
+            int out = fromModelOutput(&(prediction[0][0]));
+            errorRate += error[0][0];
             if(out == row.y) numRight++;
-            delete prediction;
-            delete error;
         }
         cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
         cout << "model error on test set:" << errorRate << " .\n";
