@@ -470,22 +470,28 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         this->batchSize = _batchSize;
         totalSize = 0; gradSize = 0; workingSize = 0; resultSize = 0;
         for(auto op : ops){
-            totalSize += (op.workingSize + op.resultSize + op.gradSize) * batchSize;
-            gradSize += op.gradSize * batchSize;
-            workingSize += op.workingSize * batchSize;
-            resultSize += op.resultSize * batchSize;
+            int batchSizeMultiplier = batchSize;
+            if( op.opType == OperationType::InputMatrix)
+                batchSizeMultiplier = 1;
+            totalSize += (op.workingSize + op.resultSize + op.gradSize) * batchSizeMultiplier;
+            gradSize += op.gradSize * batchSizeMultiplier;
+            workingSize += op.workingSize * batchSizeMultiplier;
+            resultSize += op.resultSize * batchSizeMultiplier;
         }
         cudaMalloc((void**)&d_value,  totalSize  * sizeof(float));
         cudaMemset(d_value, 0, totalSize * sizeof(float));
         
         int idxGradSize = 0, idxWorkingSize = 0, idxResultSize = 0;
         for(auto op:ops){
+            int batchSizeMultiplier = batchSize;
+            if( op.opType == OperationType::InputMatrix)
+                batchSizeMultiplier = 1;
             memLocs[op.name+"_grad"] = d_value + idxGradSize;
-            idxGradSize += op.gradSize;
+            idxGradSize += op.gradSize * batchSizeMultiplier;
             memLocs[op.name+"_result"] = d_value + gradSize + idxResultSize;
-            idxResultSize += op.resultSize;
+            idxResultSize += op.resultSize * batchSizeMultiplier;
             memLocs[op.name+"_working"] = d_value + gradSize + resultSize + idxWorkingSize;
-            idxWorkingSize += op.workingSize;
+            idxWorkingSize += op.workingSize * batchSizeMultiplier;
             // if(op.opType == OperationType::Concat) {
             //     ConcatConfig opCnfg = get<ConcatConfig>(op.config);
 
@@ -531,8 +537,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
           exit(1);
           return;
         }
-        if(values.size() != batchSize && 
-            op->opType != OperationType::InputColumn && op->opType != OperationType::InputMatrix) {
+        if(values.size() != batchSize && op->opType != OperationType::InputMatrix) {
           cout << "setValues on " << name << " doesn't match the batchSize. batchSize is "
                << batchSize << " while the values size is " << values.size() << "." << endl;
           exit(1);
@@ -678,6 +683,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             } break;
             case OperationType::MatrixProduct: {
                 BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
+
 
                 float *matrixValue = memLocs[opConfig.target1+"_result"];
                 float *colValue = memLocs[opConfig.target2+"_result"];
@@ -879,26 +885,73 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 // break;
                 case OperationType::MatrixProduct: {
                     BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
+
                     float alpha = 1;
                     float beta = 0;
                     float* d_matrix1 = memLocs[opConfig.target1+"_result"];
                     float* d_matrix2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
 
-                    cublasErrCk( cublasSgemm( *cublasH
+                    // if target1 is an Input it must not batch, all the pointers must point to the same matrixValue
+
+                    // the colValue however should be batched, meaning we can pass it in directly all the time.
+                    const auto targetOp1 = find_if(ops.begin(), ops.end()
+                                , [opConfig](auto needle) { return needle.name == opConfig.target1;});
+                    const auto targetOp2 = find_if(ops.begin(), ops.end()
+                                , [opConfig](auto needle) { return needle.name == opConfig.target2;});
+                    if(targetOp1 == ops.end() || targetOp2 == ops.end()) {
+                      cout << "compute(MatrixProduct) cannot find op " <<
+                              opConfig.target1 << " or " << opConfig.target2 << endl;
+
+                      exit(1);
+                      return;
+                    }
+
+                    float* As[batchSize];
+                    float* Bs[batchSize];
+                    float* Cs[batchSize];
+                    vector<tuple<float*, float*, float*>> targets;
+                    for(int i=0;i<batchSize;i++){
+                      if(targetOp2->opType == OperationType::InputMatrix){
+                        As[i] = d_matrix1;
+                      } else {
+                        As[i] = d_matrix1 + i * targetOp1->resultSize;
+                      }
+                      Bs[i] = d_matrix2 + i * targetOp2->resultSize;
+                      Cs[i] = d_result + i * op.resultSize;
+                    }
+                    
+                    float** d_As;
+                    float** d_Bs;
+                    float** d_Cs;
+                    cudaMalloc((void**)&d_As, batchSize * sizeof(float*));
+                    cudaMalloc((void**)&d_Bs, batchSize * sizeof(float*));
+                    cudaMalloc((void**)&d_Cs, batchSize * sizeof(float*));
+                    
+                    cudaMemcpy(d_As, As, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                    cudaMemcpy(d_Bs, Bs, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                    cudaMemcpy(d_Cs, Cs, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+
+
+                    cublasErrCk( cublasSgemmBatched( *cublasH
                                , CUBLAS_OP_N
                                , CUBLAS_OP_N
                                , opConfig.target2Cols
                                , opConfig.target1Rows
                                , opConfig.target1Cols
                                , &alpha
-                               , d_matrix2
+                               , d_Bs
                                , opConfig.target2Cols
-                               , d_matrix1
+                               , d_As
                                , opConfig.target1Cols
                                , &beta
-                               , d_result
-                               , opConfig.target2Cols) ) 
+                               , d_Cs
+                               , opConfig.target2Cols
+                               , batchSize) ) 
+                   cudaFree(d_As);
+                   cudaFree(d_Bs);
+                   cudaFree(d_Cs);
+
 
                 break;}
 
