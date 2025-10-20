@@ -595,7 +595,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         float* resultsTemp = new float [ batchSize * op->rows * op-> cols ];
         float* d_value = memLocs[name+"_result"];
 
-        cudaMemcpy(resultsTemp, d_value, sizeof(float)*op->rows*op->cols,cudaMemcpyDeviceToHost);
+        cudaMemcpy(resultsTemp, d_value, sizeof(float)*batchSize*op->rows*op->cols,cudaMemcpyDeviceToHost);
 
         for(int i=0;i<batchSize;i++) {
             results->push_back(vector(resultsTemp + i * op->resultSize, resultsTemp + ((i+1) * op->resultSize) ));
@@ -912,7 +912,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* Cs[batchSize];
                     vector<tuple<float*, float*, float*>> targets;
                     for(int i=0;i<batchSize;i++){
-                      if(targetOp2->opType == OperationType::InputMatrix){
+                      if(targetOp1->opType == OperationType::InputMatrix){
                         As[i] = d_matrix1;
                       } else {
                         As[i] = d_matrix1 + i * targetOp1->resultSize;
