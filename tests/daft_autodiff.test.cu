@@ -13,9 +13,9 @@ protected:
     Function* f;
     Function* g;
     Function* h;
-    float* result;
-    float* result2;
-    float* result3;
+    vector<vector<float>> result;
+    vector<vector<float>> result2;
+    vector<vector<float>> result3;
     void SetUp() override {
         cublasCreate(&cublasH);
         f = new Function(&cublasH);
@@ -32,15 +32,9 @@ protected:
         h->addOp(Operation::column("tu", 2));
         h->addOp(Operation::innerProduct("test2", "sr", "tu", 2));
         h->compile();
-        result = new float[1];
-        result2 = new float[1];
-        result3 = new float[2];
     }
     void TearDown() override {
         cublasDestroy(cublasH);
-        delete [] result;
-        delete [] result2;
-        delete [] result3;
         delete f;
         delete g;
         delete h;
@@ -59,8 +53,8 @@ TEST_F(DaftInnerProductTest, DaftInnerProductCompute) {
     g->setValue("x", {{9}});
     g->compute();
     g->computeGrad("test1");
-    g->getGrad("x", result2);
-    EXPECT_EQ(result2[0], 18) << "x0 grad";
+    g->getGrad("x", &result2);
+    EXPECT_EQ(result2[0][0], 18) << "x0 grad";
 
     h->setValue("sr", {{1.0,2.0}});
     h->setValue("tu", {{3.0,-3.0}});
@@ -70,9 +64,9 @@ TEST_F(DaftInnerProductTest, DaftInnerProductCompute) {
     EXPECT_EQ(resultVec2[0][0], -3.0) << "compute";
 
     h->computeGrad("test2");
-    h->getGrad("sr", result3);
-    EXPECT_EQ(result3[0], 3) << "s grad ";
-    EXPECT_EQ(result3[1], -3) << "r grad ";
+    h->getGrad("sr", &result3);
+    EXPECT_EQ(result3[0][0], 3) << "s grad ";
+    EXPECT_EQ(result3[0][1], -3) << "r grad ";
 }
 
 class DaftMatrixColProductTest : public testing::Test {
@@ -80,9 +74,9 @@ protected:
     cublasHandle_t cublasH;
     Function *f;
     Function *g;
-    float *result;
-    float *matrixGrad;
-    float *result2;
+    vector<vector<float>> result;
+    vector<vector<float>> matrixGrad;
+    vector<vector<float>> result2;
     void SetUp() override {
         cublasCreate(&cublasH);
         f = new Function(&cublasH);
@@ -91,22 +85,15 @@ protected:
         f->addOp(Operation::matrixProduct("f", "abcd", "xy", 2, 2, 1));
         f->compile(); 
 
-        result = new float[2];
-        matrixGrad = new float[4];
-
         g = new Function(&cublasH);
         g->addOp(Operation::matrix("A", 2, 2));
         g->addOp(Operation::matrix("B", 2, 2));
         g->addOp(Operation::matrixProduct("g", "A", "B", 2, 2, 2));
         g-> compile();
-        result2 = new float[4];
 
     }
     void TearDown() override {
         cublasDestroy(cublasH);
-        delete [] result;
-        delete [] result2;
-        delete [] matrixGrad;
         delete f;
         delete g;
     }
@@ -146,8 +133,8 @@ protected:
     cublasHandle_t cublasH;
 
     Function *f;
-    float *result;
-    float *resultGrad;
+    vector<vector<float>> result;
+    vector<vector<float>> resultGrad;
     void SetUp() override {
         cublasCreate(&cublasH);
         f = new Function(&cublasH);
@@ -155,13 +142,9 @@ protected:
         f->addOp(Operation::scalarMultiply("test", "xy", 2, 1, 5.0));
         f->compile();
 
-        result = new float[2];
-        resultGrad = new float[2];
     }
     void TearDown() override {
         cublasDestroy(cublasH);
-        delete [] result;
-        delete [] resultGrad;
         delete f;
     }
 };
@@ -172,11 +155,11 @@ TEST_F(DaftScalarTest, DaftScalarCompute) {
     f->computeGrad("test");
     vector<vector<float>> resultVec;
     f->getValue("test", &resultVec);
-    f->getGrad("xy", resultGrad);
+    f->getGrad("xy", &resultGrad);
     EXPECT_EQ(resultVec[0][0], 5) << "compute0";
     EXPECT_EQ(resultVec[0][1], 10) << "compute1";
-    EXPECT_EQ(resultGrad[0], 5) << "grad0";
-    EXPECT_EQ(resultGrad[1], 5) << "grad1";
+    EXPECT_EQ(resultGrad[0][0], 5) << "grad0";
+    EXPECT_EQ(resultGrad[0][1], 5) << "grad1";
 }
 
 class DaftAddTest : public testing::Test {
@@ -184,8 +167,8 @@ protected:
     cublasHandle_t cublasH;
 
     Function *f;
-    float *result;
-    float *resultGrad;
+    vector<vector<float>> result;
+    vector<vector<float>> resultGrad;
 
     void SetUp() override {
         cublasCreate(&cublasH);
@@ -194,13 +177,9 @@ protected:
         f->addOp(Operation::add("f","xy","xy", 2, 1));
         f->compile();
 
-        result = new float[2];
-        resultGrad = new float[2];
     }
     void TearDown() override {
         cublasDestroy(cublasH);
-        delete [] result;
-        delete [] resultGrad;
         delete f;
     }
 };
@@ -210,11 +189,11 @@ TEST_F(DaftAddTest, DaftAddCompute) {
     f->computeGrad("f");
     vector<vector<float>> resultVec;
     f->getValue("f", &resultVec);
-    f->getGrad("xy", resultGrad);
+    f->getGrad("xy", &resultGrad);
     EXPECT_EQ(resultVec[0][0], 2) << "compute0";
     EXPECT_EQ(resultVec[0][1], 4) << "compute1";
-    EXPECT_EQ(resultGrad[0], 2) << "grad0";
-    EXPECT_EQ(resultGrad[1], 2) << "grad1";
+    EXPECT_EQ(resultGrad[0][0], 2) << "grad0";
+    EXPECT_EQ(resultGrad[0][1], 2) << "grad1";
 }
 
 class DaftLeakyReLUTest : public testing::Test {
@@ -222,8 +201,8 @@ protected:
     cublasHandle_t cublasH;
 
     Function *f;
-    float *result;
-    float *resultGrad;
+    vector<vector<float>> result;
+    vector<vector<float>> resultGrad;
 
     void SetUp() override {
         cublasCreate(&cublasH);
@@ -233,13 +212,9 @@ protected:
         f->addOp(Operation::applyLeakyReLU("f", "z", 2,2));
         f->compile();
 
-        result = new float[4];
-        resultGrad = new float[4];
     }
     void TearDown() override {
         cublasDestroy(cublasH);
-        delete [] result;
-        delete [] resultGrad;
         delete f;
     }
 };
@@ -250,13 +225,13 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
     f->computeGrad("f");
     vector<vector<float>> resultVec;
     f->getValue("f", &resultVec);
-    f->getGrad("z", resultGrad);
+    f->getGrad("z", &resultGrad);
 
     float values[4] = { 500, -5, 0.5, -0.01 };
     float grads[4] = { 1, 0.01, 1, 0.01 };
     for (int i = 0; i < 4; i++) {
         EXPECT_EQ(resultVec[0][i], values[i]) << "LeakyReLU compute (" << i << ")";
-        EXPECT_EQ(resultGrad[i], grads[i]) << "z grad (" << i << ")";
+        EXPECT_EQ(resultGrad[0][i], grads[i]) << "z grad (" << i << ")";
     }
 
 }
@@ -607,7 +582,7 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
 // protected:
 //     cublasHandle_t cublasH;
 //     Function* f;
-//     float* testvalue;
+//     vector<vector<float>> testvalue;
 //     float scalarValue = 5;
 // 
 //     void SetUp() override {
@@ -631,13 +606,11 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
 //         f->compute();
 //         f->computeGrad("smp");
 //         
-//         testvalue = new float[4];
-//         f->getGrad("id3", testvalue);
+//         f->getGrad("id3", &testvalue);
 //     }
 //     
 //     void TearDown() override {
 //         cublasDestroy(cublasH);
-//         delete[] testvalue;
 //         delete f;
 //     }
 // };
@@ -645,7 +618,7 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
 // TEST_F(DaftMaxPoolGradTest, MaxPoolGradTest) {
 //     float values[4] = {0, 0, 0, scalarValue};
 //     for (int i = 0; i < 4; i++) {
-//         EXPECT_EQ(testvalue[i], values[i]) << "Daft MaxPool grad test";
+//         EXPECT_EQ(testvalue[0][i], values[i]) << "Daft MaxPool grad test";
 //     }
 // }
 // 
@@ -653,8 +626,8 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
 // protected:
 //     cublasHandle_t cublasH;
 //     Function* f;
-//     float* result;
-//     float* testgrad;
+//     vector<vector<float>> result;
+//     vector<vector<float>> testgrad;
 // 
 //     void SetUp() override {
 //         cublasCreate(&cublasH);
@@ -681,23 +654,19 @@ TEST_F(DaftLeakyReLUTest, DaftLeakyReLUCompute) {
 //         f->compute();
 //         f->computeGrad("flatF");
 //         
-//         result = new float[1];
-//         testgrad = new float[1];
-//         f->getValue("flatF", result);
-//         f->getGrad("v2", testgrad);
+//         f->getValue("flatF", &result);
+//         f->getGrad("v2", &testgrad);
 //     }
 //     
 //     void TearDown() override {
 //         cublasDestroy(cublasH);
-//         delete[] result;
-//         delete[] testgrad;
 //         delete f;
 //     }
 // };
 // 
 // TEST_F(DaftConcatComputeTest, ConcatComputeTest) {
-//     EXPECT_EQ(result[0], 13) << "Daft Concat compute";
-//     EXPECT_EQ(testgrad[0], 3) << "Daft Concat grad";
+//     EXPECT_EQ(result[0][0], 13) << "Daft Concat compute";
+//     EXPECT_EQ(testgrad[0][0], 3) << "Daft Concat grad";
 // }
 
 class DaftBatchComputeTest : public testing::Test {

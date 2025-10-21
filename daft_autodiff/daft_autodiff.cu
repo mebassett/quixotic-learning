@@ -603,7 +603,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         delete [] resultsTemp ;
     }
 
-    void Function::getGrad(string name, float* result) {
+    void Function::getGrad(string name, vector<vector<float>>* results) {
         Operation *op;
         for(auto needle : ops){
             if(needle.name == name) {
@@ -611,8 +611,15 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 break;
             }
         }
+        float* resultsTemp = new float [ batchSize * op->gradSize];
         float* d_value = memLocs[name+"_grad"];
-        cudaMemcpy(result, d_value, sizeof(float)*op->gradSize,cudaMemcpyDeviceToHost);
+        cudaMemcpy(resultsTemp, d_value, sizeof(float)*op->gradSize*batchSize,cudaMemcpyDeviceToHost);
+
+        for(int i=0;i<batchSize;i++)
+            results->push_back(vector(resultsTemp + i * op->gradSize, resultsTemp + ((i+1)*op->gradSize)));
+
+        delete [] resultsTemp;
+
     }
 
     void Function::computeGrad(string name) {
