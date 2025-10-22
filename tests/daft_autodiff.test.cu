@@ -74,9 +74,6 @@ protected:
     cublasHandle_t cublasH;
     Function *f;
     Function *g;
-    vector<vector<float>> result;
-    vector<vector<float>> matrixGrad;
-    vector<vector<float>> result2;
     void SetUp() override {
         cublasCreate(&cublasH);
         f = new Function(&cublasH);
@@ -103,16 +100,17 @@ TEST_F(DaftMatrixColProductTest, DaftMatrixColProductCompute) {
     f->setValue("abcd", {{1,-1,-1,1}});
     f->setValue("xy", {{1,2}});
     f->compute();
-    //f->computeGrad("f");
+    f->computeGrad("f");
     vector<vector<float>> resultVec;
+    vector<vector<float>> matrixGrad;
     f->getValue("f", &resultVec);
-    //f->getGrad("abcd", matrixGrad);
+    f->getGrad("abcd", &matrixGrad);
     EXPECT_EQ(resultVec[0][0],-1) << "compute0";
     EXPECT_EQ(resultVec[0][1],1) << "compute1";
-    //EXPECT_EQ(matrixGrad[0], 1) << "abcd grad";
-    //EXPECT_EQ(matrixGrad[1], 2) << "abcd grad";
-    //EXPECT_EQ(matrixGrad[2], 1) << "abcd grad";
-    //EXPECT_EQ(matrixGrad[3], 2) << "abcd grad";
+    EXPECT_EQ(matrixGrad[0][0], 1) << "abcd grad";
+    EXPECT_EQ(matrixGrad[0][1], 2) << "abcd grad";
+    EXPECT_EQ(matrixGrad[0][2], 1) << "abcd grad";
+    EXPECT_EQ(matrixGrad[0][3], 2) << "abcd grad";
 
     g->setValue("A", {{1,2,3,4}});
     g->setValue("B", {{1,1,-1,1}});

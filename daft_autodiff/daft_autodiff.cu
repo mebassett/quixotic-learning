@@ -632,15 +632,15 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         float* seed;
         cudaError_t err;
         int size = op->rows * op->cols * sizeof(float);
-        err = cudaMalloc((void**)&seed, size);
+        err = cudaMalloc((void**)&seed, size*batchSize);
         if (err != cudaSuccess) {
             printf("malloc error in Function::computeGrad: %s\n", cudaGetErrorString(err));
             exit(1);
         }
 
-        dim3 gd(ceil(op->cols / 32.0), ceil(op->rows / 32.0), 1);
+        dim3 gd(ceil((op->cols * batchSize )/ 32.0), ceil(op->rows / 32.0), 1);
         dim3 bd(32, 32, 1);
-        doFill<<<gd, bd>>>(op->rows, op->cols, 1.0f, seed);
+        doFill<<<gd, bd>>>(op->rows*batchSize, op->cols, 1.0f, seed);
 
         computeGrad(name, seed);
         cudaFree(seed);
@@ -657,7 +657,6 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         }
 
         Operation op = *it;
-        float *grad = memLocs[name+"_grad"];
         switch(op.opType) {
             case OperationType::InnerProduct: {
                 BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
@@ -682,58 +681,116 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             } break;
             case OperationType::InputColumn: {
                 float alpha = 1;
+                float *grad = memLocs[name+"_grad"];
                 cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
             } break;
             case OperationType::InputMatrix: {
                 float alpha = 1;
+                float *grad = memLocs[name+"_grad"];
                 cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
             } break;
             case OperationType::MatrixProduct: {
                 BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
 
+                const auto targetOp1 = find_if(ops.begin(), ops.end()
+                            , [opConfig](auto needle) { return needle.name == opConfig.target1;});
+                const auto targetOp2 = find_if(ops.begin(), ops.end()
+                            , [opConfig](auto needle) { return needle.name == opConfig.target2;});
+                if(targetOp1 == ops.end() || targetOp2 == ops.end()) {
+                  cout << "compute(MatrixProduct) cannot find op " <<
+                          opConfig.target1 << " or " << opConfig.target2 << endl;
 
-                float *matrixValue = memLocs[opConfig.target1+"_result"];
+                  exit(1);
+                  return;
+                }
+
                 float *colValue = memLocs[opConfig.target2+"_result"];
                 float *matrixGrad = memLocs[op.name+"_grad"];
-                float *colGrad = matrixGrad + opConfig.target1Rows * opConfig.target1Cols;
+                float *matrixValue = memLocs[opConfig.target1+"_result"];
+                float *colGrad = matrixGrad + batchSize * opConfig.target1Rows * opConfig.target1Cols;
+
+                float *colValues[batchSize];
+                float *matrixValues[batchSize];
+                float *seeds[batchSize];
+                float *matrixGrads[batchSize];
+                float *colGrads[batchSize];
+
+                for(int i=0;i<batchSize;i++) {
+                  if(targetOp1->opType == OperationType::InputMatrix)
+                    matrixValues[i] = matrixValue;
+                  else
+                    matrixValues[i] = matrixValue + i * batchSize;
+                    
+                  colValues[i] = colValue + i * targetOp2->resultSize;
+                  seeds[i] = seed + i * opConfig.target1Rows;
+                  matrixGrads[i] = matrixGrad + i * opConfig.target1Rows * opConfig.target1Cols;
+                  colGrads[i] = colGrad + i * opConfig.target1Cols * opConfig.target2Cols;
+                }
+
+                float** d_matrixValues;
+                float** d_colValues;
+                float** d_seeds;
+                float** d_matrixGrads;
+                float** d_colGrads;
+                cudaMalloc((void**)&d_matrixValues, batchSize * sizeof(float*));
+                cudaMalloc((void**)&d_colValues, batchSize * sizeof(float*));
+                cudaMalloc((void**)&d_seeds, batchSize * sizeof(float*));
+                cudaMalloc((void**)&d_matrixGrads, batchSize * sizeof(float*));
+                cudaMalloc((void**)&d_colGrads, batchSize * sizeof(float*));
+
+                cudaMemcpy(d_matrixValues, matrixValues, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                cudaMemcpy(d_colValues, colValues, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                cudaMemcpy(d_seeds, seeds, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                cudaMemcpy(d_matrixGrads, matrixGrads, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                cudaMemcpy(d_colGrads, colGrads, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
 
                 float alpha = 1;
                 float beta = 0;
 
-                cublasErrCk( cublasSgemm( *cublasH
+                cublasErrCk( cublasSgemmBatched( *cublasH
                            , CUBLAS_OP_T
                            , CUBLAS_OP_N
                            , opConfig.target1Cols
                            , opConfig.target1Rows
                            , 1
                            , &alpha
-                           , colValue
+                           , d_colValues
                            , 1
-                           , seed
+                           , d_seeds
                            , 1
                            , &beta
-                           , matrixGrad
-                           , opConfig.target1Cols) ); 
-                cublasErrCk( cublasSgemm( *cublasH
+                           , d_matrixGrads
+                           , opConfig.target1Cols
+                           , batchSize) ); 
+                
+                cublasErrCk( cublasSgemmBatched( *cublasH
                            , CUBLAS_OP_N
                            , CUBLAS_OP_T
                            , 1
                            , opConfig.target1Cols
                            , opConfig.target1Rows
                            , &alpha
-                           , seed
+                           , d_seeds
                            , 1
-                           , matrixValue
+                           , d_matrixValues
                            , opConfig.target1Cols
                            , &beta
-                           , colGrad
-                           , 1) );
+                           , d_colGrads
+                           , 1
+                           , batchSize) );
+
+                cudaFree(d_matrixValues); 
+                cudaFree(d_colValues); 
+                cudaFree(d_seeds); 
+                cudaFree(d_matrixGrads); 
+                cudaFree(d_colGrads); 
                 computeGrad(opConfig.target1, matrixGrad);
                 computeGrad(opConfig.target2, colGrad);
             } break;
             case OperationType::Scalar: {
                 ScalarConfig opConfig = get<ScalarConfig>(op.config);
                 float *result = memLocs[op.name+"_result"];
+                float *grad = memLocs[name+"_grad"];
 
                 cublasErrCk( cublasScopy(*cublasH, op.cols * op.rows, seed, 1, grad, 1) );
                 cublasErrCk( cublasSscal(*cublasH, op.cols * op.rows, &(opConfig.scale), grad, 1) );
@@ -751,6 +808,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             case OperationType::LeakyReLU: {
                 BasicConfig opConfig = get<BasicConfig>(op.config);
                 float* newSeed = memLocs[op.name+"_working"];
+                float *grad = memLocs[name+"_grad"];
 
                 dim3 bd(32, 32, 1);
                 dim3 gd(ceil(op.cols / 32.0), ceil(op.cols / 32.0), 1);
