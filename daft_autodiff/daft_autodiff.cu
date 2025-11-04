@@ -79,15 +79,28 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
     }
 
 
+    __global__ void doBatchedSaxpy(int colSize, int batchSize, float* seed, float* grad) {
+        int row = blockIdx.y * blockDim.y + threadIdx.y;
+        int resultIdx = blockIdx.z * blockDim.z + threadIdx.z;
+
+
+        if( row < colSize && resultIdx < batchSize) {
+            int idx = resultIdx * colSize + row; 
+            grad[idx] = grad[idx] + seed[idx];
+        }
+    }
+
     //TODO move to cuda file shared between both silly and daft things.
     __global__ void doLeakyReLU(int Arows, int Acols, float* grad, float* A,
-        float* result)
+        float* result, int batchSize)
     {
         int row = blockIdx.y * blockDim.y + threadIdx.y;
         int col = blockIdx.x * blockDim.x + threadIdx.x;
-        if ((row < Arows) && (col < Acols)) {
-            int i = row * Acols + col;
-            if (A[i] > 0) {
+        int resultIdx = blockIdx.z * blockDim.z + threadIdx.z;
+
+        if ((row < Arows) && (col < Acols) && resultIdx < batchSize) {
+            int i = row * Acols + col + resultIdx * Acols * Arows;
+            if (A[i] >= 0) {
                 grad[i] = 1;
                 result[i] = A[i];
             } else {
@@ -106,12 +119,14 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
     }
 
     __global__ void doComponentProduct(int rows, int cols, float* grad, float* seed,
-        float* result)
+        float* result, int batchSize)
     {
         int row = blockIdx.y * blockDim.y + threadIdx.y;
         int col = blockIdx.x * blockDim.x + threadIdx.x;
-        if (row < rows && col < cols) {
-            result[row * cols + col] = seed[row * cols + col] * grad[row * cols + col];
+        int resultIdx = blockIdx.z * blockDim.z + threadIdx.z;
+        if (row < rows && col < cols && resultIdx < batchSize) {
+            int i = (rows * cols * resultIdx) + (row * cols) + col; 
+            result[i] = seed[i] * grad[i];
         }
     }
 
@@ -680,9 +695,15 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 computeGrad(opConfig.target1, vec2);
             } break;
             case OperationType::InputColumn: {
-                float alpha = 1;
                 float *grad = memLocs[name+"_grad"];
-                cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
+
+                dim3 bd(1, 32, 32);
+                dim3 gd(1, ceil(op.gradSize / 32.0), ceil(batchSize / 32.0));
+
+                doBatchedSaxpy<<<gd, bd>>>(op.gradSize, batchSize, seed, grad);
+                cudaErrCk( cudaPeekAtLastError() );
+
+
             } break;
             case OperationType::InputMatrix: {
                 float alpha = 1;
@@ -809,11 +830,10 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 BasicConfig opConfig = get<BasicConfig>(op.config);
                 float* newSeed = memLocs[op.name+"_working"];
                 float *grad = memLocs[name+"_grad"];
+                dim3 bd(16, 16, 4);
+                dim3 gd(ceil(op.cols / 16.0), ceil(op.rows / 16.0), ceil(batchSize / 4.0));
 
-                dim3 bd(32, 32, 1);
-                dim3 gd(ceil(op.cols / 32.0), ceil(op.cols / 32.0), 1);
-
-                doComponentProduct<<<gd, bd>>>(op.rows, op.cols, grad, seed, newSeed);
+                doComponentProduct<<<gd, bd>>>(op.rows, op.cols, grad, seed, newSeed, batchSize);
 
                 computeGrad(opConfig.target, newSeed);
 
@@ -1030,11 +1050,11 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* d_grad = memLocs[op.name+"_grad"];
                     float* d_result = memLocs[op.name+"_result"];
 
-                    dim3 bd(32, 32, 1);
-                    dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
+                    dim3 bd(16, 16, 4);
+                    dim3 gd(ceil(op.cols / 16.0), ceil(op.rows / 16.0), ceil(batchSize / 4.0));
 
 
-                    doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result);
+                    doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result, batchSize);
                     cudaErrCk( cudaPeekAtLastError() );
 
 
