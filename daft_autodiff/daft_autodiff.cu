@@ -1081,7 +1081,48 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* d_v1 = memLocs[opConfig.target1+"_result"];
                     float* d_v2 = memLocs[opConfig.target2+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
-                    cublasErrCk( cublasSdot(*cublasH, opConfig.targetRows, d_v1, 1, d_v2, 1, d_result) );
+
+                    float alpha = 1;
+                    float beta = 0;
+
+                    float* v1Ptrs[batchSize];
+                    float* v2Ptrs[batchSize];
+                    float* resultPtrs[batchSize];
+
+                    for(int i = 0; i < batchSize; i++) {
+                        v1Ptrs[i] = d_v1 + i * opConfig.targetRows;
+                        v2Ptrs[i] = d_v2 + i * opConfig.targetRows;
+                        resultPtrs[i] = d_result + i * 1; 
+                    }
+
+                    float** d_v1Ptrs;
+                    float** d_v2Ptrs;
+                    float** d_resultPtrs;
+                    cudaMalloc((void**)&d_v1Ptrs, batchSize * sizeof(float*));
+                    cudaMalloc((void**)&d_v2Ptrs, batchSize * sizeof(float*));
+                    cudaMalloc((void**)&d_resultPtrs, batchSize * sizeof(float*));
+
+                    cudaMemcpy(d_v1Ptrs, v1Ptrs, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                    cudaMemcpy(d_v2Ptrs, v2Ptrs, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+                    cudaMemcpy(d_resultPtrs, resultPtrs, batchSize * sizeof(float*), cudaMemcpyHostToDevice);
+
+                    cublasErrCk( cublasSgemvBatched( *cublasH
+                                       , CUBLAS_OP_N
+                                       , 1
+                                       , opConfig.targetRows
+                                       , &alpha
+                                       , d_v1Ptrs
+                                       , 1
+                                       , d_v2Ptrs
+                                       , 1
+                                       , &beta
+                                       , d_resultPtrs
+                                       , 1
+                                       , batchSize) );
+
+                    cudaFree(d_v1Ptrs);
+                    cudaFree(d_v2Ptrs);
+                    cudaFree(d_resultPtrs);
 
                 break;}
                 // case OperationType::Convolution:{
