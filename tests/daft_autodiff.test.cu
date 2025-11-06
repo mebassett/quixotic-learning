@@ -896,7 +896,7 @@ protected:
     }
 };
 
-TEST_F(DaftBatchInnerProductTest, BatchInnerProductComputeTest) {
+TEST_F(DaftBatchInnerProductTest, BatchInnerProductComputeAndGradTest) {
     // Set 5 different 3D vectors for each input
     vector<vector<float>> vec1Inputs = {
         {1.0, 2.0, 3.0},     // batch 0: [1, 2, 3]
@@ -934,6 +934,24 @@ TEST_F(DaftBatchInnerProductTest, BatchInnerProductComputeTest) {
     for (int batch = 0; batch < 5; batch++) {
         EXPECT_FLOAT_EQ(results[batch][0], expected[batch]) 
             << "Batch inner product compute batch " << batch;
+    }
+
+    // Test gradients
+    f->computeGrad("dotProduct");
+    
+    vector<vector<float>> vec1Grads;
+    vector<vector<float>> vec2Grads;
+    f->getGrad("vec1", &vec1Grads);
+    f->getGrad("vec2", &vec2Grads);
+
+    // For inner product, gradient of vec1 should be vec2, and gradient of vec2 should be vec1
+    for (int batch = 0; batch < 5; batch++) {
+        for (int elem = 0; elem < 3; elem++) {
+            EXPECT_FLOAT_EQ(vec1Grads[batch][elem], vec2Inputs[batch][elem]) 
+                << "Batch inner product vec1 gradient batch " << batch << ", element " << elem;
+            EXPECT_FLOAT_EQ(vec2Grads[batch][elem], vec1Inputs[batch][elem]) 
+                << "Batch inner product vec2 gradient batch " << batch << ", element " << elem;
+        }
     }
 }
 
