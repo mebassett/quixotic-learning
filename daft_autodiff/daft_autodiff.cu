@@ -679,15 +679,15 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 float* col2 = memLocs[opConfig.target2+"_result"];
 
                 float* vec1 = memLocs[name+"_grad"];
-                float* vec2 = memLocs[name+"_grad"] + opConfig.targetRows;
+                float* vec2 = memLocs[name+"_grad"] + opConfig.targetRows * batchSize;
                 
                 cublasErrCk( cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_DEVICE) );
 
-                cublasErrCk( cublasScopy(*cublasH, opConfig.targetRows, col1, 1, vec1, 1) );
-                cublasErrCk( cublasSscal(*cublasH, opConfig.targetRows, seed, vec1, 1) );
+                cublasErrCk( cublasScopy(*cublasH, opConfig.targetRows * batchSize, col1, 1, vec1, 1) );
+                cublasErrCk( cublasSscal(*cublasH, opConfig.targetRows * batchSize, seed, vec1, 1) );
                 
-                cublasErrCk( cublasScopy(*cublasH, opConfig.targetRows, col2, 1, vec2, 1) );
-                cublasErrCk( cublasSscal(*cublasH, opConfig.targetRows, seed, vec2, 1) );
+                cublasErrCk( cublasScopy(*cublasH, opConfig.targetRows * batchSize, col2, 1, vec2, 1) );
+                cublasErrCk( cublasSscal(*cublasH, opConfig.targetRows * batchSize, seed, vec2, 1) );
                 cublasErrCk( cublasSetPointerMode( *cublasH, CUBLAS_POINTER_MODE_HOST ) );
 
                 
