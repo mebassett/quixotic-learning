@@ -822,7 +822,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
                 float* copySeed = memLocs[op.name+"_grad"];
 
-                cudaMemcpy(copySeed, seed, op.rows * op.cols * sizeof(float), cudaMemcpyDeviceToDevice);
+                cudaMemcpy(copySeed, seed, batchSize * op.rows * op.cols * sizeof(float), cudaMemcpyDeviceToDevice);
                 computeGrad(opConfig.target1, seed);
                 computeGrad(opConfig.target2, copySeed);
             } break;
@@ -1066,8 +1066,8 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* d_result = memLocs[op.name+"_result"];
                     float alpha = 1.0;
                     
-                    cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols, d_v1, 1, d_result, 1) );
-                    cublasErrCk( cublasSaxpy(*cublasH, op.rows * op.cols, &alpha, d_v2, 1, d_result, 1) );
+                    cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols * batchSize, d_v1, 1, d_result, 1) );
+                    cublasErrCk( cublasSaxpy(*cublasH, op.rows * op.cols * batchSize, &alpha, d_v2, 1, d_result, 1) );
                 break;}
                 case OperationType::Scalar:{
                     ScalarConfig opConfig = get<ScalarConfig>(op.config);
