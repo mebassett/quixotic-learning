@@ -813,8 +813,8 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 float *result = memLocs[op.name+"_result"];
                 float *grad = memLocs[name+"_grad"];
 
-                cublasErrCk( cublasScopy(*cublasH, op.cols * op.rows, seed, 1, grad, 1) );
-                cublasErrCk( cublasSscal(*cublasH, op.cols * op.rows, &(opConfig.scale), grad, 1) );
+                cublasErrCk( cublasScopy(*cublasH, op.cols * op.rows * batchSize, seed, 1, grad, 1) );
+                cublasErrCk( cublasSscal(*cublasH, op.cols * op.rows * batchSize, &(opConfig.scale), grad, 1) );
                 computeGrad(opConfig.target, grad);
 
             } break;
@@ -1073,8 +1073,8 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     ScalarConfig opConfig = get<ScalarConfig>(op.config);
                     float* d_target = memLocs[opConfig.target+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
-                    cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols, d_target, 1, d_result, 1) );
-                    cublasErrCk( cublasSscal(*cublasH, op.rows * op.cols, &(opConfig.scale), d_result, 1) );
+                    cublasErrCk( cublasScopy(*cublasH, op.rows * op.cols * batchSize, d_target, 1, d_result, 1) );
+                    cublasErrCk( cublasSscal(*cublasH, op.rows * op.cols * batchSize, &(opConfig.scale), d_result, 1) );
                 break;}
                 case OperationType::InnerProduct:{
                     BinaryOpConfig opConfig = get<BinaryOpConfig>(op.config);
