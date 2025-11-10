@@ -37,6 +37,7 @@ int fromModelOutput(float* out)
 int main() {
     float learningRate = 0.025;
     cublasHandle_t cublasH;
+    uint BATCHSIZE = 1;
 
     cublasCreate(&cublasH);
     Function *f;
@@ -54,14 +55,15 @@ int main() {
     f->addOp(Operation::innerProduct("ip", "add", "add", OUTPUT_SIZE));
     f->addOp(Operation::scalarMultiply("error", "ip", 1,1, 0.5f));
 
-    f->compile();
+    f->compile(BATCHSIZE);
 
     vector<float> weights1 (NUM_HIDDEN_NODES * (INPUT_SIZE + 1));
     vector<float> weights2 (OUTPUT_SIZE * NUM_HIDDEN_NODES);
     
     cout << "init weights...\n";
 
-    initializeWeights(&weights1, &weights2, -0.05, 0.05);
+    float limit = sqrt(6.0f / (INPUT_SIZE + NUM_HIDDEN_NODES));
+    initializeWeights(&weights1, &weights2, -limit, limit);
 
     f->setValue("weights1", {weights1});
     f->setValue("weights2", {weights2});
@@ -77,63 +79,94 @@ int main() {
     errorRate = 0.0;
     trainingExamples = 0;
 
-    for(auto row : testRows) {
-        vector<float> input (begin(row.x), end(row.x));
-        vector<float> target (begin(row.t), end(row.t));
-        f->setValue("input", {input});
-        f->setValue("targetInput", {target});
+    for(int i = 0; i<testRows.size(); i += BATCHSIZE) {
+        int actualBatchSize = min(BATCHSIZE, (int)testRows.size() - 1);
+        vector<Training_Datum> slice ( testRows.begin() + i 
+                                     , testRows.begin() + i + actualBatchSize);
+        vector<vector<float>> inputs (actualBatchSize);
+        vector<vector<float>> targets (actualBatchSize);
+        transform(slice.begin(), slice.end(), inputs.begin(), 
+            [](auto row) { return vector<float>(begin(row.x), end(row.x)); });
+        transform(slice.begin(), slice.end(), targets.begin(), 
+            [](auto row) { return vector<float>(begin(row.t), end(row.t)); });
+
+        f->setValue("input", inputs);
+        f->setValue("targetInput", targets);
+
         vector<vector<float>> prediction;
         vector<vector<float>> error;
 
         f->compute();
         f->getValue("prediction", &prediction);
         f->getValue("error", &error);
-
-        int out = fromModelOutput(&(prediction[0][0]));
-        errorRate += error[0][0];
-        if(out == row.y) numRight++;
+        for(int j =0;j<BATCHSIZE;j++){
+            int out = fromModelOutput(&(prediction[j][0]));
+            errorRate += error[j][0];
+            if(out == slice[j].y) numRight++;
+        }
     }
+
     cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
     cout << "model error on test set:" << errorRate << " .\n";
 
     while (count <= 1) {
         cout << "starting epoch " << count << endl;
-        for(auto row: rows) {
+        random_device rd;
+        mt19937 g(rd());
+        shuffle(rows.begin(), rows.end(), g);
+        for(int i = 0; i<rows.size(); i += BATCHSIZE) {
             f->resetGrad();
 
-            vector<float> input (begin(row.x), end(row.x));
-            vector<float> target (begin(row.t), end(row.t));
+            int actualBatchSize = min(BATCHSIZE, (int)rows.size() - 1);
+            vector<Training_Datum> slice ( rows.begin() + i 
+                                         , rows.begin() + i + actualBatchSize);
+            vector<vector<float>> inputs (actualBatchSize);
+            vector<vector<float>> targets (actualBatchSize);
+            transform(slice.begin(), slice.end(), inputs.begin(), 
+                [](auto row) { return vector<float>(begin(row.x), end(row.x)); });
+            transform(slice.begin(), slice.end(), targets.begin(), 
+                [](auto row) { return vector<float>(begin(row.t), end(row.t)); });
 
-            f->setValue("input", {input});
-            f->setValue("targetInput", {target});
+            f->setValue("input", inputs);
+            f->setValue("targetInput", targets);
 
             f->compute();
             f->computeGrad("error");
 
             f->gradDescent("weights1", learningRate);
             f->gradDescent("weights2", learningRate);
-            trainingExamples++;
+            trainingExamples += actualBatchSize;
             if (trainingExamples % 10000 == 0)
                 cout << "done " << trainingExamples << " so far." << endl;
         }
         numRight = 0;
         errorRate = 0.0;
         trainingExamples = 0;
-        for(auto row : testRows) {
-            vector<float> input (begin(row.x), end(row.x));
-            vector<float> target (begin(row.t), end(row.t));
-            f->setValue("input", {input});
-            f->setValue("targetInput", {target});
+        for(int i = 0; i<testRows.size(); i += BATCHSIZE) {
+            int actualBatchSize = min(BATCHSIZE, (int)testRows.size() - 1);
+            vector<Training_Datum> slice ( testRows.begin() + i 
+                                         , testRows.begin() + i + actualBatchSize);
+            vector<vector<float>> inputs (actualBatchSize);
+            vector<vector<float>> targets (actualBatchSize);
+            transform(slice.begin(), slice.end(), inputs.begin(), 
+                [](auto row) { return vector<float>(begin(row.x), end(row.x)); });
+            transform(slice.begin(), slice.end(), targets.begin(), 
+                [](auto row) { return vector<float>(begin(row.t), end(row.t)); });
+
+            f->setValue("input", inputs);
+            f->setValue("targetInput", targets);
+
             vector<vector<float>> prediction;
-            vector<vector<float>> error ;
+            vector<vector<float>> error;
 
             f->compute();
             f->getValue("prediction", &prediction);
             f->getValue("error", &error);
-
-            int out = fromModelOutput(&(prediction[0][0]));
-            errorRate += error[0][0];
-            if(out == row.y) numRight++;
+            for(int j =0;j<BATCHSIZE;j++){
+                int out = fromModelOutput(&(prediction[j][0]));
+                errorRate += error[j][0];
+                if(out == slice[j].y) numRight++;
+            }
         }
         cout << "num right: " << numRight << " / " << testRows.size() << " .\n";
         cout << "model error on test set:" << errorRate << " .\n";

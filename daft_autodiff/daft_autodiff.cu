@@ -576,7 +576,9 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
     void Function::gradDescent(string name, float learningRate) {
         float alpha = 1;
-        float beta = -1 * learningRate;
+        float effectiveLR = learningRate * sqrt(batchSize);  
+        float beta = -effectiveLR / batchSize;
+        //float beta = -1 * learningRate / batchSize;
         Operation *op;
 
         for(auto needle : ops){
@@ -588,15 +590,16 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         if(op->opType != OperationType::InputMatrix) return;
 
         float* result  = memLocs[name+"_result"];
-        float* grad  = memLocs[name+"_grad"];
 
-
-        cublasErrCk ( cublasSgeam( *cublasH
-                     , CUBLAS_OP_N
-                     , CUBLAS_OP_N
-                     , op->cols, op->rows, &alpha
-                     , result, op->cols, &beta
-                     , grad, op->cols, result, op->cols) );
+        for(int i=0;i<batchSize;i++){
+          float* grad  = memLocs[name+"_grad"] + i * op->rows * op->cols;
+          cublasErrCk ( cublasSgeam( *cublasH
+                       , CUBLAS_OP_N
+                       , CUBLAS_OP_N
+                       , op->cols, op->rows, &alpha
+                       , result, op->cols, &beta
+                       , grad, op->cols, result, op->cols) );
+        }
 
     }
 
