@@ -21,7 +21,7 @@ enum class OperationType
     , Scalar
     , InnerProduct
     //, Convolution
-    //, MaxPool
+    , MaxPool
     //, Concat
     };
 
@@ -82,7 +82,7 @@ struct MaxPoolConfig {
     const uint targetCols;
 };
 
-using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig>;//, ConvolutionConfig, MaxPoolConfig, ConcatConfig>;
+using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, ScalarConfig, ConvolutionConfig, MaxPoolConfig, ConcatConfig>;
 
 struct Operation {
     const OperationType opType;
