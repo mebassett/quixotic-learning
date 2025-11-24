@@ -22,7 +22,7 @@ enum class OperationType
     , InnerProduct
     //, Convolution
     , MaxPool
-    //, Concat
+    , Concat
     };
 
 ostream& operator<<(ostream &o, const OperationType t) ;

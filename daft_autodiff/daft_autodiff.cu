@@ -70,9 +70,9 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             case OperationType::MaxPool:
                 o << "MaxPool";
                 break;
-            // case OperationType::Concat:
-            //     o << "Concat";
-            //     break;
+            case OperationType::Concat:
+                o << "Concat";
+                break;
 
         }
         return o;
@@ -461,21 +461,21 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
     // // so we are assuming the results of each of the targets are just a big 
     // // continuous block in memory.  otherwise this won't work.  so be careful
     // // using it.  it's mostly used to push the gradients down.
-    // Operation Operation::concat(string name, const vector<string>& targets, uint size) {
-    //     return { .opType=OperationType::Concat
-    //            , .workingSize = 0
-    //            , .resultSize = 0
-    //            , .gradSize = 0
-    //            , .rows = size
-    //            , .cols = 1
-    //            , .name{name}
-    //            , .noOp = false
-    //            , .config { (ConcatConfig) {
-    //                  .targets{targets}
-    //                , .size=size
-    //            }}
-    //     };
-    // }
+    Operation Operation::concat(string name, const vector<string>& targets, uint size) {
+        return { .opType=OperationType::Concat
+               , .workingSize = 0
+               , .resultSize = 0
+               , .gradSize = 0
+               , .rows = size
+               , .cols = 1
+               , .name{name}
+               , .noOp = false
+               , .config { (ConcatConfig) {
+                     .targets{targets}
+                   , .size=size
+               }}
+        };
+    }
 
     Function::Function(cublasHandle_t* cublasH) : ops(), memLocs(), cublasH(cublasH) {
         batchSize = 1; 
@@ -507,11 +507,11 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             idxResultSize += op.resultSize * batchSizeMultiplier;
             memLocs[op.name+"_working"] = d_value + gradSize + resultSize + idxWorkingSize;
             idxWorkingSize += op.workingSize * batchSizeMultiplier;
-            // if(op.opType == OperationType::Concat) {
-            //     ConcatConfig opCnfg = get<ConcatConfig>(op.config);
+            if(op.opType == OperationType::Concat) {
+                ConcatConfig opCnfg = get<ConcatConfig>(op.config);
 
-            //     memLocs[op.name+"_result"] = memLocs[opCnfg.targets[0]+"_result"];
-            // }
+                memLocs[op.name+"_result"] = memLocs[opCnfg.targets[0]+"_result"];
+            }
 
         }
     }
@@ -936,21 +936,21 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
                 computeGrad(opConfig.target, grad);
             }break;
-            //case OperationType::Concat: {
-            //    ConcatConfig opCnfg = get<ConcatConfig>(op.config);
-            //    int memIndex = 0;
-            //    for (auto target : opCnfg.targets) {
-            //        const auto targetOp = 
-            //            find_if( ops.begin()
-            //                   , ops.end()
-            //                   , [target](auto needle) {
-            //                           return needle.name == target;
-            //                     });
-            //        if(targetOp == ops.end()) break;
-            //        computeGrad(target, seed + memIndex);
-            //        memIndex += targetOp->rows * targetOp->cols; 
-            //    }
-            //}break;
+            case OperationType::Concat: {
+                ConcatConfig opCnfg = get<ConcatConfig>(op.config);
+                int memIndex = 0;
+                for (auto target : opCnfg.targets) {
+                    const auto targetOp = 
+                        find_if( ops.begin()
+                               , ops.end()
+                               , [target](auto needle) {
+                                       return needle.name == target;
+                                 });
+                    if(targetOp == ops.end()) break;
+                    computeGrad(target, seed + memIndex);
+                    memIndex += targetOp->rows * targetOp->cols * batchSize; 
+                }
+            }break;
 
         }
     }
@@ -965,12 +965,12 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 case OperationType::InputMatrix:
                     // this is the same as InputColumn.  InputColumn is redundant
                 break;
-                // case OperationType::Concat:
-                //     // no operation here, we could do a copy to get all the targets
-                //     // into one continuous block in memory, but we're just going
-                //     // to assume that's the case. 
-                //     // a smart compiler might enforce that, actually!
-                // break;
+                case OperationType::Concat:
+                    // no operation here, we could do a copy to get all the targets
+                    // into one continuous block in memory, but we're just going
+                    // to assume that's the case. 
+                    // a smart compiler might enforce that, actually!
+                break;
                 case OperationType::MatrixProduct: {
                     BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
 
