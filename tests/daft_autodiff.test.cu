@@ -703,10 +703,10 @@ protected:
         
         f->compile();
 
-        // Set up values - same as silly test
-        f->setValue("v2", {1});
-        f->setValue("v3", {2});
-        f->setValue("v4", {3, 5});
+        // Set up values - now using vector of vectors for batch API
+        f->setValue("v2", {{1}});
+        f->setValue("v3", {{2}});
+        f->setValue("v4", {{3, 5}});
 
         f->compute();
         f->computeGrad("flatF");
