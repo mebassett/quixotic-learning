@@ -76,10 +76,10 @@ target_include_directories(
 )
 set_target_properties(tests PROPERTIES
        CUDA_SEPARABLE_COMPILATION ON
-       CUDA_ARCHITECTURES "52")
+       CUDA_ARCHITECTURES "native")
 set_target_properties(tests PROPERTIES
        CUDA_SEPARABLE_COMPILATION ON
-       CUDA_ARCHITECTURES "52"
+       CUDA_ARCHITECTURES "native"
        CUDA_HOST_COMPILER ${CMAKE_CXX_COMPILER}
    )
 
