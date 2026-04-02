@@ -20,7 +20,7 @@ enum class OperationType
     , Add
     , Scalar
     , InnerProduct
-    //, Convolution
+    , Convolution
     , MaxPool
     , Concat
     };

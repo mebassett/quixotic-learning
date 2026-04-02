@@ -380,58 +380,58 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         };
     }
     
-    // Operation Operation::convolution(string name, string multiplicand, string kernel, uint rowPadding,
-    //         uint rowSkip, uint colPadding, uint colSkip, 
-    //         uint multiplicandRows, uint multiplicandCols,
-    //         uint kernelRows, uint kernelCols) {
-    //     int rows = (multiplicandRows + 2 * rowPadding - kernelRows) / rowSkip + 1;
-    //     int cols = (multiplicandCols + 2 * colPadding - kernelCols) / colSkip + 1;
+    Operation Operation::convolution(string name, string multiplicand, string kernel, uint rowPadding,
+            uint rowSkip, uint colPadding, uint colSkip, 
+            uint multiplicandRows, uint multiplicandCols,
+            uint kernelRows, uint kernelCols) {
+        int rows = (multiplicandRows + 2 * rowPadding - kernelRows) / rowSkip + 1;
+        int cols = (multiplicandCols + 2 * colPadding - kernelCols) / colSkip + 1;
 
-    //     int unrKrnlCols = (multiplicandRows + rowPadding*2) * (multiplicandCols + colPadding*2);
-    //     int unrKrnlRows = rows * cols; 
+        int unrKrnlCols = (multiplicandRows + rowPadding*2) * (multiplicandCols + colPadding*2);
+        int unrKrnlRows = rows * cols; 
 
-    //     // working size ihe padding input plus the unrolled kernel.
-    //     int paddedInputSize = 
-    //       (multiplicandRows + 2 * rowPadding) * (multiplicandCols + 2 * colPadding);
+        // working size ihe padding input plus the unrolled kernel.
+        int paddedInputSize = 
+          (multiplicandRows + 2 * rowPadding) * (multiplicandCols + 2 * colPadding);
 
-    //     // grad size will be 
-    //     //    size of the original kernel matrix
-    //     //  + size of the original input matrix (multiplicand)
-    //     //  BUT we also need some working memory for the unrolling and unpadding
-    //     //  so we also have
-    //     //  + size of unrolled kernel matrix
-    //     //  + size of a column of the unrolled kernel matrix
-    //     // of the multiplicand plus
-    //     int gradSize =    (kernelRows * kernelCols) 
-    //                     + (multiplicandRows * multiplicandCols)
-    //                     + (unrKrnlRows * unrKrnlCols)
-    //                     + unrKrnlCols;
-    //     
-    //     return { .opType=OperationType::Convolution
-    //            , .workingSize = paddedInputSize + (unrKrnlRows * unrKrnlCols)
-    //            , .resultSize = rows * cols
-    //            , .gradSize = gradSize
-    //            , .rows = rows
-    //            , .cols = cols
-    //            , .name{name}
-    //            , .noOp = false
-    //            , .config{ (ConvolutionConfig) {
-    //                .multiplicand{multiplicand}
-    //              , .kernel{kernel}
-    //              , .rowPadding = rowPadding
-    //              , .rowSkip = rowSkip
-    //              , .colPadding = colPadding
-    //              , .colSkip = colSkip
-    //              , .multiplicandRows = multiplicandRows
-    //              , .multiplicandCols = multiplicandCols
-    //              , .kernelRows = kernelRows
-    //              , .kernelCols = kernelCols
-    //              , .unrKrnlRows = unrKrnlRows
-    //              , .unrKrnlCols = unrKrnlCols
-    //              , .paddedInputSize = paddedInputSize
-    //              }}
-    //            };
-    // }
+        // grad size will be 
+        //    size of the original kernel matrix
+        //  + size of the original input matrix (multiplicand)
+        //  BUT we also need some working memory for the unrolling and unpadding
+        //  so we also have
+        //  + size of unrolled kernel matrix
+        //  + size of a column of the unrolled kernel matrix
+        // of the multiplicand plus
+        int gradSize =    (kernelRows * kernelCols) 
+                        + (multiplicandRows * multiplicandCols)
+                        + (unrKrnlRows * unrKrnlCols)
+                        + unrKrnlCols;
+        
+        return { .opType=OperationType::Convolution
+               , .workingSize = paddedInputSize + (unrKrnlRows * unrKrnlCols)
+               , .resultSize = rows * cols
+               , .gradSize = gradSize
+               , .rows = rows
+               , .cols = cols
+               , .name{name}
+               , .noOp = false
+               , .config{ (ConvolutionConfig) {
+                   .multiplicand{multiplicand}
+                 , .kernel{kernel}
+                 , .rowPadding = rowPadding
+                 , .rowSkip = rowSkip
+                 , .colPadding = colPadding
+                 , .colSkip = colSkip
+                 , .multiplicandRows = multiplicandRows
+                 , .multiplicandCols = multiplicandCols
+                 , .kernelRows = kernelRows
+                 , .kernelCols = kernelCols
+                 , .unrKrnlRows = unrKrnlRows
+                 , .unrKrnlCols = unrKrnlCols
+                 , .paddedInputSize = paddedInputSize
+                 }}
+               };
+    }
 
      Operation Operation::maxPool(string name, string target, uint width, uint height, 
              uint rowSkip, uint colSkip, uint targetRows, uint targetCols) {
@@ -841,86 +841,86 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 computeGrad(opConfig.target, newSeed);
 
             } break;
-            //case OperationType::Convolution: {
-            //    ConvolutionConfig opCnfg = get<ConvolutionConfig>(op.config);
+            case OperationType::Convolution: {
+                ConvolutionConfig opCnfg = get<ConvolutionConfig>(op.config);
 
-            //    float alpha = 1;
-            //    float beta = 0;
+                float alpha = 1;
+                float beta = 0;
 
-            //    int startInput = opCnfg.kernelRows * opCnfg.kernelCols;
-            //    int startMatrix = startInput 
-            //        + (opCnfg.multiplicandRows * opCnfg.multiplicandCols);
-            //    int startCol = startMatrix
-            //        + (opCnfg.unrKrnlRows * opCnfg.unrKrnlCols);
+                int startInput = opCnfg.kernelRows * opCnfg.kernelCols;
+                int startMatrix = startInput 
+                    + (opCnfg.multiplicandRows * opCnfg.multiplicandCols);
+                int startCol = startMatrix
+                    + (opCnfg.unrKrnlRows * opCnfg.unrKrnlCols);
 
-            //    float* rolledKernelMatrixGrad = memLocs[op.name+"_grad"];
-            //    float* inputGrad = memLocs[op.name+"_grad"] + startInput;
-            //    float* matrixGrad = memLocs[op.name+"_grad"] + startMatrix; 
-            //    float* colGrad = memLocs[op.name+"_grad"] + startCol; 
+                float* rolledKernelMatrixGrad = memLocs[op.name+"_grad"];
+                float* inputGrad = memLocs[op.name+"_grad"] + startInput;
+                float* matrixGrad = memLocs[op.name+"_grad"] + startMatrix; 
+                float* colGrad = memLocs[op.name+"_grad"] + startCol; 
 
-            //    float* paddedInput = memLocs[op.name+"_working"];
-            //    float* unrolledKernel = memLocs[op.name+"_working"]
-            //                        + opCnfg.paddedInputSize;
+                float* paddedInput = memLocs[op.name+"_working"];
+                float* unrolledKernel = memLocs[op.name+"_working"]
+                                    + opCnfg.paddedInputSize;
 
-            //    cublasErrCk( cublasSgemm( *cublasH
-            //                , CUBLAS_OP_T
-            //                , CUBLAS_OP_N
-            //                , opCnfg.unrKrnlCols
-            //                , opCnfg.unrKrnlRows
-            //                , 1
-            //                , &alpha
-            //                , paddedInput
-            //                , 1
-            //                , seed
-            //                , 1
-            //                , &beta
-            //                , matrixGrad
-            //                , opCnfg.unrKrnlCols));
+                cublasErrCk( cublasSgemm( *cublasH
+                            , CUBLAS_OP_T
+                            , CUBLAS_OP_N
+                            , opCnfg.unrKrnlCols
+                            , opCnfg.unrKrnlRows
+                            , 1
+                            , &alpha
+                            , paddedInput
+                            , 1
+                            , seed
+                            , 1
+                            , &beta
+                            , matrixGrad
+                            , opCnfg.unrKrnlCols));
  
-            //    dim3 gd(ceil(opCnfg.unrKrnlCols / 1024.0), 1, 1);
-            //    dim3 bd(1024, 1, 1);
-            //    doKernelRoll<<<gd, bd>>>( matrixGrad
-            //        , rolledKernelMatrixGrad
-            //        , opCnfg.kernelRows
-            //        , opCnfg.kernelCols
-            //        , opCnfg.unrKrnlCols
-            //        , opCnfg.unrKrnlRows
-            //        , opCnfg.colSkip
-            //        , opCnfg.rowSkip
-            //        , opCnfg.multiplicandCols + 2 * opCnfg.colPadding
-            //        , op.cols);
-            //    cudaErrCk( cudaPeekAtLastError() );
-            //    computeGrad(opCnfg.kernel, rolledKernelMatrixGrad);
+                dim3 gd(ceil(opCnfg.unrKrnlCols / 1024.0), 1, 1);
+                dim3 bd(1024, 1, 1);
+                doKernelRoll<<<gd, bd>>>( matrixGrad
+                    , rolledKernelMatrixGrad
+                    , opCnfg.kernelRows
+                    , opCnfg.kernelCols
+                    , opCnfg.unrKrnlCols
+                    , opCnfg.unrKrnlRows
+                    , opCnfg.colSkip
+                    , opCnfg.rowSkip
+                    , opCnfg.multiplicandCols + 2 * opCnfg.colPadding
+                    , op.cols);
+                cudaErrCk( cudaPeekAtLastError() );
+                computeGrad(opCnfg.kernel, rolledKernelMatrixGrad);
 
-            //    cublasErrCk(
-            //      cublasSgemm( *cublasH
-            //          , CUBLAS_OP_N
-            //          , CUBLAS_OP_T
-            //          , 1
-            //          , opCnfg.unrKrnlCols
-            //          , opCnfg.unrKrnlRows
-            //          , &alpha
-            //          , seed
-            //          , 1
-            //          , unrolledKernel
-            //          , opCnfg.unrKrnlCols
-            //          , &beta
-            //          , colGrad
-            //          , 1)
-            //    );
-            //    dim3 gd2( ceil(opCnfg.multiplicandCols / 32.0)
-            //            , ceil(opCnfg.multiplicandRows / 32.0)
-            //            , 1);
-            //    dim3 bd2(32, 32, 1);
-            //    doCopyWithoutPadding<<<gd2, bd2>>>( colGrad
-            //            , inputGrad
-            //            , opCnfg.multiplicandRows
-            //            , opCnfg.multiplicandCols
-            //            , opCnfg.rowPadding
-            //            , opCnfg.colPadding);
-            //    cudaErrCk( cudaPeekAtLastError() );
-            //    computeGrad(opCnfg.multiplicand, inputGrad);
-            //}break;
+                cublasErrCk(
+                  cublasSgemm( *cublasH
+                      , CUBLAS_OP_N
+                      , CUBLAS_OP_T
+                      , 1
+                      , opCnfg.unrKrnlCols
+                      , opCnfg.unrKrnlRows
+                      , &alpha
+                      , seed
+                      , 1
+                      , unrolledKernel
+                      , opCnfg.unrKrnlCols
+                      , &beta
+                      , colGrad
+                      , 1)
+                );
+                dim3 gd2( ceil(opCnfg.multiplicandCols / 32.0)
+                        , ceil(opCnfg.multiplicandRows / 32.0)
+                        , 1);
+                dim3 bd2(32, 32, 1);
+                doCopyWithoutPadding<<<gd2, bd2>>>( colGrad
+                        , inputGrad
+                        , opCnfg.multiplicandRows
+                        , opCnfg.multiplicandCols
+                        , opCnfg.rowPadding
+                        , opCnfg.colPadding);
+                cudaErrCk( cudaPeekAtLastError() );
+                computeGrad(opCnfg.multiplicand, inputGrad);
+            }break;
             case OperationType::MaxPool: {
                 MaxPoolConfig opConfig = get<MaxPoolConfig>(op.config);
                 float* targetValue = memLocs[opConfig.target+"_result"];
@@ -1128,51 +1128,51 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     cudaFree(d_resultPtrs);
 
                 break;}
-                // case OperationType::Convolution:{
-                //     // pad the input, which means a copy to wocrking, which is slow
-                //     ConvolutionConfig opCnfg = get<ConvolutionConfig>(op.config);
-                //     float* input = memLocs[opCnfg.multiplicand+"_result"];
-                //     float* paddedInput = memLocs[op.name+"_working"];
-                //     convolutionPadInput( opCnfg.multiplicandRows
-                //                        , opCnfg.multiplicandCols
-                //                        , opCnfg.rowPadding
-                //                        , opCnfg.colPadding
-                //                        , input
-                //                        , paddedInput);
+                case OperationType::Convolution:{
+                    // pad the input, which means a copy to wocrking, which is slow
+                    ConvolutionConfig opCnfg = get<ConvolutionConfig>(op.config);
+                    float* input = memLocs[opCnfg.multiplicand+"_result"];
+                    float* paddedInput = memLocs[op.name+"_working"];
+                    convolutionPadInput( opCnfg.multiplicandRows
+                                       , opCnfg.multiplicandCols
+                                       , opCnfg.rowPadding
+                                       , opCnfg.colPadding
+                                       , input
+                                       , paddedInput);
 
-                //     // unroll the kernel..another slow copy to working.
-                //     float* kernel = memLocs[opCnfg.kernel+"_result"];
-                //     float* unrolledKernel = memLocs[op.name+"_working"] + opCnfg.paddedInputSize;
-                //     convolutionUnrollKernel( opCnfg.unrKrnlRows
-                //             , opCnfg.unrKrnlCols
-                //             , opCnfg.kernelRows
-                //             , opCnfg.kernelCols
-                //             , opCnfg.multiplicandCols + 2 * opCnfg.colPadding
-                //             , op.cols
-                //             , opCnfg.rowSkip
-                //             , opCnfg.colSkip
-                //             , kernel
-                //             , unrolledKernel);
+                    // unroll the kernel..another slow copy to working.
+                    float* kernel = memLocs[opCnfg.kernel+"_result"];
+                    float* unrolledKernel = memLocs[op.name+"_working"] + opCnfg.paddedInputSize;
+                    convolutionUnrollKernel( opCnfg.unrKrnlRows
+                            , opCnfg.unrKrnlCols
+                            , opCnfg.kernelRows
+                            , opCnfg.kernelCols
+                            , opCnfg.multiplicandCols + 2 * opCnfg.colPadding
+                            , op.cols
+                            , opCnfg.rowSkip
+                            , opCnfg.colSkip
+                            , kernel
+                            , unrolledKernel);
 
-                //     // do a matrix multiplication, storing it in the result
-                //     float alpha = 1;
-                //     float beta = 0;
-                //     float* output = memLocs[op.name+"_result"];
+                    // do a matrix multiplication, storing it in the result
+                    float alpha = 1;
+                    float beta = 0;
+                    float* output = memLocs[op.name+"_result"];
 
-                //     cublasErrCk( cublasSgemv( *cublasH
-                //                 , CUBLAS_OP_T
-                //                 , opCnfg.unrKrnlCols
-                //                 , opCnfg.unrKrnlRows
-                //                 , &alpha
-                //                 , unrolledKernel
-                //                 , opCnfg.unrKrnlCols
-                //                 , paddedInput
-                //                 , 1
-                //                 , &beta
-                //                 , output
-                //                 , 1 ) );
+                    cublasErrCk( cublasSgemv( *cublasH
+                                , CUBLAS_OP_T
+                                , opCnfg.unrKrnlCols
+                                , opCnfg.unrKrnlRows
+                                , &alpha
+                                , unrolledKernel
+                                , opCnfg.unrKrnlCols
+                                , paddedInput
+                                , 1
+                                , &beta
+                                , output
+                                , 1 ) );
 
-                // break;}
+                break;}
                 case OperationType::MaxPool: {
                     MaxPoolConfig opConfig = get<MaxPoolConfig>(op.config);
                     float* d_target = memLocs[opConfig.target+"_result"];
