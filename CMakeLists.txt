@@ -58,7 +58,17 @@ enable_testing()
 add_executable(
     tests
     tests/silly_autodiff.test.cu
-    tests/daft_autodiff.test.cu
+    tests/daft_innerproduct.test.cu
+    tests/daft_matrix_product.test.cu
+    tests/daft_scalar_multiply.test.cu
+    tests/daft_add.test.cu
+    tests/daft_leaky_relu.test.cu
+    tests/daft_convolution.test.cu
+    tests/daft_max_pool.test.cu
+    tests/daft_concat.test.cu
+    tests/daft_batch_compute.test.cu
+    tests/daft_batch_innerproduct.test.cu
+    tests/daft_negative_identity.test.cu
 )
 target_link_libraries(
     tests
