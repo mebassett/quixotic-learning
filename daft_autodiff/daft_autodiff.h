@@ -15,6 +15,7 @@ namespace DA {
 enum class OperationType 
     { InputColumn
     , InputMatrix
+    , WeightsMatrix
     , MatrixProduct
     , LeakyReLU
     , Add
@@ -96,7 +97,8 @@ struct Operation {
     const OpConfig config;
 
     static Operation column(string name, uint rows);
-    static Operation matrix(string name, uint rows, uint cols);
+    static Operation inputMatrix(string name, uint rows, uint cols);
+    static Operation weightsMatrix(string name, uint rows, uint cols);
     static Operation matrixProduct(string name, string target1, string target2, uint target1Rows, uint target1Cols, uint target2Cols);
     static Operation applyLeakyReLU(string name, string target, uint rows, uint cols);
     static Operation innerProduct(string name, string target1, string target2, uint rows);

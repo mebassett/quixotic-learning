@@ -205,11 +205,13 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
 
     __global__ void doMaxPool(int targetRows, int targetCols, int matrixRows,
         int matrixCols, int rowSkip, int height, int colSkip,
-        int width, float* matrix, float* result)
+        int width, float* matrix, float* result, int batchSize)
     {
         int trow = blockIdx.y * blockDim.y + threadIdx.y;
         int tcol = blockIdx.x * blockDim.x + threadIdx.x;
-        if (trow < targetRows && tcol < targetCols) {
+        int resultIdx = blockIdx.z * blockDim.z + threadIdx.z;
+
+        if (trow < targetRows && tcol < targetCols && resultIdx < batchSize) {
             float val = -9999;
             int mrow = rowSkip * trow;
             int mcol = colSkip * tcol;
@@ -217,24 +219,25 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             for (int i = mrow; i < mrow + height; i++)
                 for (int j = mcol; j < mcol + width; j++)
                     if (i >= 0 && j >= 0 && i < matrixRows && j < matrixCols) {
-                        int mIndex = matrixCols * i + j;
+                        int mIndex = matrixCols * i + j + resultIdx * matrixRows * matrixCols;
                         if (matrix[mIndex] > val)
                             val = matrix[mIndex];
                     }
 
-            result[targetCols * trow + tcol] = val;
+            result[targetCols * trow + tcol + resultIdx * targetRows * targetCols] = val;
         }
     }
 
     __global__ void doMaxPoolGrad(int targetRows, int targetCols, int matrixRows,
         int matrixCols, int rowSkip, int height,
         int colSkip, int width, float* matrix,
-        float* value, float* seed, float* result)
+        float* value, float* seed, float* result, int batchSize)
     {
         int trow = blockIdx.y * blockDim.y + threadIdx.y;
         int tcol = blockIdx.x * blockDim.x + threadIdx.x;
-        int tIndex = targetCols * trow + tcol;
-        if (trow < targetRows && tcol < targetCols) {
+        int resultIdx = blockIdx.z * blockDim.z + threadIdx.z;
+        int tIndex = targetCols * trow + tcol + resultIdx * targetRows * targetCols;
+        if (trow < targetRows && tcol < targetCols && resultIdx < batchSize) {
             int mrow = rowSkip * trow;
             int mcol = colSkip * tcol;
 
@@ -243,7 +246,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             for (int i = mrow; i < mrow + height; i++)
                 for (int j = mcol; j < mcol + width; j++)
                     if (i >= 0 && j >= 0 && i < matrixRows && j < matrixCols) {
-                        int mIndex = matrixCols * i + j;
+                        int mIndex = matrixCols * i + j + (resultIdx * matrixRows * matrixCols);
                         result[mIndex] = val * (matrix[mIndex] == value[tIndex]);
                     }
         }
@@ -296,8 +299,18 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                , .name{name} };
     }
 
-    Operation Operation::matrix(string name, uint rows, uint cols) {
+    Operation Operation::inputMatrix(string name, uint rows, uint cols) {
         return { .opType=OperationType::InputMatrix
+               , .workingSize = 0
+               , .resultSize = rows*cols
+               , .gradSize = rows*cols
+               , .rows = rows
+               , .cols = cols
+               , .name{name} };
+              
+    }
+    Operation Operation::weightsMatrix(string name, uint rows, uint cols) {
+        return { .opType=OperationType::WeightsMatrix
                , .workingSize = 0
                , .resultSize = rows*cols
                , .gradSize = rows*cols
@@ -486,7 +499,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         totalSize = 0; gradSize = 0; workingSize = 0; resultSize = 0;
         for(auto op : ops){
             int batchSizeMultiplier = batchSize;
-            if( op.opType == OperationType::InputMatrix)
+            if( op.opType == OperationType::WeightsMatrix ) 
                 batchSizeMultiplier = 1;
             totalSize += (op.workingSize + op.resultSize + op.gradSize) * batchSizeMultiplier;
             gradSize += op.gradSize * batchSizeMultiplier;
@@ -499,7 +512,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
         int idxGradSize = 0, idxWorkingSize = 0, idxResultSize = 0;
         for(auto op:ops){
             int batchSizeMultiplier = batchSize;
-            if( op.opType == OperationType::InputMatrix)
+            if( op.opType == OperationType::WeightsMatrix )
                 batchSizeMultiplier = 1;
             memLocs[op.name+"_grad"] = d_value + idxGradSize;
             idxGradSize += op.gradSize * batchSizeMultiplier;
@@ -552,7 +565,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
           exit(1);
           return;
         }
-        if(values.size() != batchSize && op->opType != OperationType::InputMatrix) {
+        if(values.size() != batchSize && op->opType != OperationType::WeightsMatrix) {
           cout << "setValues on " << name << " doesn't match the batchSize. batchSize is "
                << batchSize << " while the values size is " << values.size() << "." << endl;
           exit(1);
@@ -587,7 +600,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 break;
             }
         }
-        if(op->opType != OperationType::InputMatrix) return;
+        if(op->opType != OperationType::WeightsMatrix) return;
 
         float* result  = memLocs[name+"_result"];
 
@@ -713,6 +726,11 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 float *grad = memLocs[name+"_grad"];
                 cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
             } break;
+            case OperationType::WeightsMatrix: {
+                float alpha = 1;
+                float *grad = memLocs[name+"_grad"];
+                cublasErrCk( cublasSaxpy(*cublasH, op.gradSize, &alpha, seed, 1, grad, 1) );
+            } break;
             case OperationType::MatrixProduct: {
                 BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
 
@@ -740,7 +758,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 float *colGrads[batchSize];
 
                 for(int i=0;i<batchSize;i++) {
-                  if(targetOp1->opType == OperationType::InputMatrix)
+                  if(targetOp1->opType == OperationType::WeightsMatrix)
                     matrixValues[i] = matrixValue;
                   else
                     matrixValues[i] = matrixValue + i * batchSize;
@@ -927,11 +945,11 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 float* result = memLocs[op.name+"_result"];
                 float* grad = memLocs[op.name+"_grad"];
 
-                dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
-                dim3 bd(32, 32, 1);
+                dim3 bd(16, 16, 4);
+                dim3 gd(ceil(op.cols / 16.0), ceil(op.rows / 16.0), ceil(batchSize / 4.0));
                 doMaxPoolGrad<<<gd, bd>>>(op.rows, op.cols, opConfig.targetRows, opConfig.targetCols, 
                     opConfig.rowSkip, opConfig.height, opConfig.colSkip, opConfig.width, 
-                    targetValue, result, seed, grad);
+                    targetValue, result, seed, grad, batchSize);
                 cudaErrCk( cudaPeekAtLastError() );
 
                 computeGrad(opConfig.target, grad);
@@ -963,6 +981,8 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     // basically noop
                 break;
                 case OperationType::InputMatrix:
+                    // this is the same as InputColumn.  InputColumn is redundant
+                case OperationType::WeightsMatrix:
                     // this is the same as InputColumn.  InputColumn is redundant
                 break;
                 case OperationType::Concat:
@@ -1000,7 +1020,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* Cs[batchSize];
                     vector<tuple<float*, float*, float*>> targets;
                     for(int i=0;i<batchSize;i++){
-                      if(targetOp1->opType == OperationType::InputMatrix){
+                      if(targetOp1->opType == OperationType::InputMatrix || targetOp1->opType == OperationType::WeightsMatrix){
                         As[i] = d_matrix1;
                       } else {
                         As[i] = d_matrix1 + i * targetOp1->resultSize;
@@ -1178,11 +1198,12 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     float* d_target = memLocs[opConfig.target+"_result"];
                     float* d_result = memLocs[op.name+"_result"];
 
-                    dim3 gd(ceil(op.cols / 32.0), ceil(op.rows / 32.0), 1);
-                    dim3 bd(32, 32, 1);
+                    dim3 bd(16, 16, 4);
+                    dim3 gd(ceil(op.cols / 16.0), ceil(op.rows / 16.0), ceil(batchSize / 4.0));
+
                     doMaxPool<<<gd, bd>>>(op.rows, op.cols, opConfig.targetRows, opConfig.targetCols,
                         opConfig.rowSkip, opConfig.height, opConfig.colSkip, opConfig.width,
-                        d_target, d_result);
+                        d_target, d_result, batchSize);
                     cudaErrCk( cudaPeekAtLastError() );
 
                 break;}

@@ -44,8 +44,8 @@ int main() {
     f = new Function(&cublasH);
     f->addOp(Operation::column("input", INPUT_SIZE + 1));
     f->addOp(Operation::column("targetInput", OUTPUT_SIZE));
-    f->addOp(Operation::matrix("weights1", NUM_HIDDEN_NODES, INPUT_SIZE + 1));
-    f->addOp(Operation::matrix("weights2", OUTPUT_SIZE, NUM_HIDDEN_NODES));
+    f->addOp(Operation::weightsMatrix("weights1", NUM_HIDDEN_NODES, INPUT_SIZE + 1));
+    f->addOp(Operation::weightsMatrix("weights2", OUTPUT_SIZE, NUM_HIDDEN_NODES));
     f->addOp(Operation::matrixProduct("layer1_output", "weights1", "input", NUM_HIDDEN_NODES, INPUT_SIZE + 1, 1));
     f->addOp(Operation::applyLeakyReLU("layer1_relu", "layer1_output", NUM_HIDDEN_NODES, 1));
     f->addOp(Operation::matrixProduct("prediction", "weights2", "layer1_relu", OUTPUT_SIZE, NUM_HIDDEN_NODES, 1));

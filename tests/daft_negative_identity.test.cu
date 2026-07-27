@@ -15,7 +15,7 @@ protected:
         f = new Function(&cublasH);
 
         // Add 2x2 negative identity matrix and 2x1 column vector
-        f->addOp(Operation::matrix("negId", 2, 2));
+        f->addOp(Operation::weightsMatrix("negId", 2, 2));
         f->addOp(Operation::column("x", 2));
         
         // Multiply negative identity by vector

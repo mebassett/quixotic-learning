@@ -17,7 +17,7 @@ protected:
         cublasCreate(&cublasH);
 
         f = new Function(&cublasH);
-        f->addOp(Operation::matrix("z",2,2));
+        f->addOp(Operation::weightsMatrix("z",2,2));
         f->addOp(Operation::applyLeakyReLU("f", "z", 2,2));
         f->compile();
 

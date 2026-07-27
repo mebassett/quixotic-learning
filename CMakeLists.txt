@@ -45,13 +45,14 @@ target_include_directories(lenet PUBLIC ${PROJECT_SOURCE_DIR}/mnist)
 target_link_libraries(lenet PUBLIC cublas silly_autodiff mnistdata)
 #target_link_libraries(daft-lenet PUBLIC cublas daft_autodiff mnistdata)
 
-include(FetchContent)
-FetchContent_Declare(
-    googletest
-    URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
-)
-
-FetchContent_MakeAvailable(googletest)
+#include(FetchContent)
+#FetchContent_Declare(
+#    googletest
+#    URL https://github.com/google/googletest/archive/refs/tags/v1.15.2.zip
+#)
+#
+#FetchContent_MakeAvailable(googletest)
+find_package(GTest REQUIRED)
 
 enable_testing()
 

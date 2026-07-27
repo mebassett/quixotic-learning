@@ -61,8 +61,8 @@ protected:
         f = new Function(&cublasH);
 
         // Add two 4x4 matrices and one 4x1 column vector
-        f->addOp(Operation::matrix("A1", 4, 4));
-        f->addOp(Operation::matrix("A2", 4, 4));
+        f->addOp(Operation::weightsMatrix("A1", 4, 4));
+        f->addOp(Operation::weightsMatrix("A2", 4, 4));
         f->addOp(Operation::column("x", 4));
         
         // Perform sequential matrix multiplications: A1*x, then A2*(A1*x)
