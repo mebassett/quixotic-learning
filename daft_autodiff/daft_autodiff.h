@@ -7,6 +7,7 @@
 #include <variant>
 #include <vector>
 #include <iostream>
+#include <unordered_map>
 
 using namespace std;
 
@@ -88,7 +89,7 @@ using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, Scalar
 struct Operation {
     const OperationType opType;
     const uint workingSize;
-    const uint resultSize;
+    uint resultSize;
     const uint gradSize;
     const uint rows;
     const uint cols;
@@ -116,6 +117,7 @@ struct Operation {
 
 struct Function {
     vector<Operation> ops;
+    unordered_map<string, Operation*> opsMap;
     uint gradSize;
     uint resultSize;
     uint workingSize;

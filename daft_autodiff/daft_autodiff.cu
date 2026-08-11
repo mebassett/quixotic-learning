@@ -5,6 +5,7 @@
 #include <cassert>
 #include <iostream>
 #include <vector>
+#include <unordered_map>
 
 using namespace std;
 
@@ -474,12 +475,14 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
     // // so we are assuming the results of each of the targets are just a big 
     // // continuous block in memory.  otherwise this won't work.  so be careful
     // // using it.  it's mostly used to push the gradients down.
+    // UPDATE: no longer to a big continuous block of memory.  now we do copying
+    // and interleaving, which is slower.  concat adds a step.
     Operation Operation::concat(string name, const vector<string>& targets, uint size) {
         return { .opType=OperationType::Concat
                , .workingSize = 0
-               , .resultSize = 0
+               , .resultSize = size // we assume the user set this correctly.
                , .gradSize = 0
-               , .rows = size
+               , .rows = size 
                , .cols = 1
                , .name{name}
                , .noOp = false
@@ -495,16 +498,37 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
     }
 
     void Function::compile(uint _batchSize) {
+        for(auto& op: ops) {
+            opsMap[op.name] = &op;
+        }
+
         this->batchSize = _batchSize;
         totalSize = 0; gradSize = 0; workingSize = 0; resultSize = 0;
-        for(auto op : ops){
+        for(auto& op : ops){
             int batchSizeMultiplier = batchSize;
             if( op.opType == OperationType::WeightsMatrix ) 
                 batchSizeMultiplier = 1;
-            totalSize += (op.workingSize + op.resultSize + op.gradSize) * batchSizeMultiplier;
-            gradSize += op.gradSize * batchSizeMultiplier;
-            workingSize += op.workingSize * batchSizeMultiplier;
-            resultSize += op.resultSize * batchSizeMultiplier;
+
+            if( op.opType == OperationType::Concat ) {
+                ConcatConfig opCnfg = get<ConcatConfig>(op.config);
+                if(opCnfg.targets.size() == 1)
+                    continue;
+                int targetResults = 0;
+                for(auto targetName:opCnfg.targets){ 
+                    if(auto it = opsMap.find(targetName); it != opsMap.end()) {
+                      Operation* target = it->second;
+                      targetResults += target->resultSize;
+                    }
+                }
+                op.resultSize = targetResults;
+                totalSize += targetResults * batchSizeMultiplier;
+                resultSize += targetResults * batchSizeMultiplier;
+            } else {
+              totalSize += (op.workingSize + op.resultSize + op.gradSize) * batchSizeMultiplier;
+              gradSize += op.gradSize * batchSizeMultiplier;
+              workingSize += op.workingSize * batchSizeMultiplier;
+              resultSize += op.resultSize * batchSizeMultiplier;
+            }
         }
         cudaMalloc((void**)&d_value,  totalSize  * sizeof(float));
         cudaMemset(d_value, 0, totalSize * sizeof(float));
@@ -514,17 +538,24 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             int batchSizeMultiplier = batchSize;
             if( op.opType == OperationType::WeightsMatrix )
                 batchSizeMultiplier = 1;
+            //if(op.opType == OperationType::Concat) {
+                // the below line used to work before batch processing, it was sort
+                // of a messy hack and relied on the user adding operations with
+                // the targets of the concat operation coming all in a sequence together.
+                // so we'd have A B in memory. but with batch processing we expect
+                // A_1 ... A_n B1 ... B_n, so this line doesn't work.
+                // So we give Concat a non-zero size and proceed as usual.
+                // a smarter compile would compute the sum of the size of the targets.
+                // but for now we just assume the user set that correction.
+                // memLocs[op.name+"_result"] = memLocs[opCnfg.targets[0]+"_result"];
+                //
+            //}
             memLocs[op.name+"_grad"] = d_value + idxGradSize;
             idxGradSize += op.gradSize * batchSizeMultiplier;
             memLocs[op.name+"_result"] = d_value + gradSize + idxResultSize;
             idxResultSize += op.resultSize * batchSizeMultiplier;
             memLocs[op.name+"_working"] = d_value + gradSize + resultSize + idxWorkingSize;
             idxWorkingSize += op.workingSize * batchSizeMultiplier;
-            if(op.opType == OperationType::Concat) {
-                ConcatConfig opCnfg = get<ConcatConfig>(op.config);
-
-                memLocs[op.name+"_result"] = memLocs[opCnfg.targets[0]+"_result"];
-            }
 
         }
     }
@@ -985,12 +1016,32 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                 case OperationType::WeightsMatrix:
                     // this is the same as InputColumn.  InputColumn is redundant
                 break;
-                case OperationType::Concat:
-                    // no operation here, we could do a copy to get all the targets
-                    // into one continuous block in memory, but we're just going
-                    // to assume that's the case. 
-                    // a smart compiler might enforce that, actually!
-                break;
+                case OperationType::Concat: {
+                    // ~no operation here, we could do a copy to get all the targets~
+                    // ~into one continuous block in memory, but we're just going~
+                    // ~to assume that's the case. ~
+                    // ~a smart compiler might enforce that, actually!~
+                    // with batch processing this gets tricky. if we compute A and B
+                    // then we store them as
+                    // A_1 ... A_n B_1 ... B_n
+                    // A smart compile could ensure that, but with batch processing
+                    // we actually expect this tob e
+                    // A_1 B_1 A_2 B_2 ... A_n B_n.
+                    // so our operation here is actually just to do the interleaving.
+                    // this is trivial is batchSize = 1.
+                    if( batchSize == 1)
+                        break;
+                    ConcatConfig opConfig = get<ConcatConfig>(op.config);
+
+                    //dim3 bd(ceil(batchSize / 32.0), ceil( / 32.0), 1);
+                    //dim3 gd(ceil(op.cols / 16.0), ceil(op.rows / 16.0), ceil(batchSize / 4.0));
+
+
+                    //doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result, batchSize);
+                    //cudaErrCk( cudaPeekAtLastError() );
+
+
+                break;}
                 case OperationType::MatrixProduct: {
                     BinaryMatrixConfig opConfig = get<BinaryMatrixConfig>(op.config);
 
