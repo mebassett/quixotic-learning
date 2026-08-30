@@ -88,7 +88,7 @@ using OpConfig = variant<BasicConfig, BinaryOpConfig, BinaryMatrixConfig, Scalar
 
 struct Operation {
     const OperationType opType;
-    const uint workingSize;
+    uint workingSize;
     uint resultSize;
     const uint gradSize;
     const uint rows;

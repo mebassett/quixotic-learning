@@ -110,6 +110,26 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
             }
         }
     }
+
+    __constant__ int concatSizes[32];
+    __global__ void doConcatInterleave(float** targets, int numTargets, float* result, int batchSize) 
+    {
+        int elemIdx = blockIdx.x * blockDim.x + threadIdx.x;
+        int targetIdx = blockIdx.y * blockDim.y + threadIdx.y;
+        int batchIdx = blockIdx.z * blockDim.z + threadIdx.z;
+
+        if(targetIdx < numTargets 
+                && batchIdx < batchSize 
+                && elemIdx < concatSizes[targetIdx] // hmm, not very cuda kernel friendly 
+
+          ) {
+            int idx = elemIdx + concatSizes[targetIdx] * targetIdx + batchIdx * numTargets;
+
+            result[idx] = targets[targetIdx][elemIdx + batchIdx * concatSizes[targetIdx]];
+
+        }
+    }
+
     __global__ void doFill(int rows, int cols, float value, float* result)
     {
         int row = blockIdx.y * blockDim.y + threadIdx.y;
@@ -521,6 +541,7 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                     }
                 }
                 op.resultSize = targetResults;
+                op.workingSize = opCnfg.targets.size();
                 totalSize += targetResults * batchSizeMultiplier;
                 resultSize += targetResults * batchSizeMultiplier;
             } else {
@@ -1033,12 +1054,35 @@ inline void cublasAssert(cublasStatus_t err, const char *file, int line) {
                         break;
                     ConcatConfig opConfig = get<ConcatConfig>(op.config);
 
-                    //dim3 bd(ceil(batchSize / 32.0), ceil( / 32.0), 1);
-                    //dim3 gd(ceil(op.cols / 16.0), ceil(op.rows / 16.0), ceil(batchSize / 4.0));
+                    vector<float*> hostTargets;
+                    float** d_targets;
+                    int targetSizes[32];
+                    int d_size = opConfig.targets.size();
+                    for(int i=0;i<opConfig.targets.size();i++) {
+                        const auto targetOp = find_if(ops.begin(), ops.end()
+                                    , [opConfig,i](auto needle) { return needle.name == opConfig.targets[i];});
+                        if (targetOp == ops.end()) {
+                            cout << "compute(Concat) cannot find op " <<
+                              opConfig.targets[i];
+
+                            exit(1);
+                            return;
+                        }
+                        hostTargets.push_back(memLocs[opConfig.targets[i]+"_result"]);
+                        targetSizes[i] = targetOp->resultSize;
+                    }
+
+                    cudaMemcpyToSymbol(concatSizes, targetSizes, d_size * sizeof(int));
+                    cudaMalloc((void**)&d_targets, d_size * sizeof(float*));
+                    cudaMemcpy(d_targets, &(hostTargets[0]), d_size*sizeof(float*), cudaMemcpyHostToDevice); 
+
+                    dim3 bd(16,16,4);
+                    dim3 gd(ceil((float)targetSizes[0] / 16.0), ceil((float)d_size / 16.0), ceil(batchSize / 4.0));
 
 
-                    //doLeakyReLU<<<gd, bd>>>(op.rows, op.cols, d_grad, d_col, d_result, batchSize);
-                    //cudaErrCk( cudaPeekAtLastError() );
+                    doConcatInterleave<<<gd, bd>>>(d_targets, d_size, memLocs[op.name+"_result"], batchSize);
+                    cudaErrCk( cudaPeekAtLastError() );
+                    cudaFree( d_targets );
 
 
                 break;}
